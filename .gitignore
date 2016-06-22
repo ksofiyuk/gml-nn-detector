@@ -1,0 +1,8 @@
+*~
+*.pyc
+*.caffemodel
+*.pickle
+*.html
+.ipynb_checkpoints
+.idea
+lib/build
