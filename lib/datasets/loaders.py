@@ -54,7 +54,7 @@ def load_bboxes_dataset_with_json_marking(dataset_path: str,
         marking = json.load(f)
 
     samples = []
-    for image_name, image_marking in marking.items():
+    for image_name, image_marking in sorted(marking.items()):
         image_path = os.path.join(dataset_path, 'imgs', image_name)
 
         for obj in image_marking:
@@ -86,6 +86,6 @@ def load_images_from_directory_without_marking(
     files = [os.path.join(images_path, file_name)
              for file_name in os.listdir(images_path)]
     files = filter(os.path.isfile, files)
-    images_files = filter(lambda x: x.endswith(('.jpg', '.png', '.jpeg')), files)
+    images_files = sorted(filter(lambda x: x.endswith(('.jpg', '.png', '.jpeg')), files))
 
     return [ImageFileSampleCV(image_path, [], max_size, scales) for image_path in images_files]

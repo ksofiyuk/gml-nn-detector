@@ -7,6 +7,7 @@
 
 from caffe.proto import caffe_pb2
 from caffe_model.layers import BaseLayer
+from caffe_model.layers import PythonLayer
 
 
 class DropoutLayer(BaseLayer):
@@ -58,3 +59,16 @@ class SmoothL1LossLayer(BaseLayer):
 
     def slots_out_names(self):
         return ['']
+
+
+class SmoothL1LossPyLayer(PythonLayer):
+        def __init__(self, name, sigma=3, loss_weight=1):
+            self._layer_params = {'sigma': sigma}
+
+            super(SmoothL1LossPyLayer, self).__init__(name, 'layers.smooth_l1_loss.SmoothL1LossLayer',
+                                                      self._layer_params, 4, 1)
+            self._inplace = False
+            self._params.loss_weight.extend([loss_weight])
+
+        def slots_out_names(self):
+            return ['']

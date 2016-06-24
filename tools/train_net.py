@@ -19,6 +19,8 @@ import pprint
 import numpy as np
 import sys
 import datetime
+import random
+
 
 def parse_args():
     """
@@ -40,6 +42,7 @@ def parse_args():
     args = parser.parse_args()
     return args
 
+
 if __name__ == '__main__':
     args = parse_args()
 
@@ -59,6 +62,7 @@ if __name__ == '__main__':
 
     np.random.seed(cfg.RNG_SEED)
     caffe.set_random_seed(cfg.RNG_SEED)
+    random.seed(cfg.RNG_SEED)
 
     # set up caffe
     caffe.set_mode_gpu()

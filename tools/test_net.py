@@ -25,6 +25,11 @@ def parse_args():
     Parse input arguments
     """
     parser = argparse.ArgumentParser(description='Test a Fast R-CNN network')
+
+    # parser.add_argument('--imdir', dest='imdir', help='Path to the directory with images',
+    #                     type=str, default=None)
+    # parser.add_argument('--output', help='Path to the JSON file to save resulting detections',
+    #                     type=str, default=None)
     parser.add_argument('--gpu', dest='gpu_id', help='GPU id to use',
                         default=0, type=int)
     parser.add_argument('--net', dest='caffemodel',
@@ -32,7 +37,6 @@ def parse_args():
                         default=None, type=str)
     parser.add_argument('--cfg', dest='cfg_file',
                         help='optional config file', default=None, type=str)
-
     parser.add_argument('--set', dest='set_cfgs',
                         help='set config keys', default=None,
                         nargs=argparse.REMAINDER)
