@@ -89,6 +89,9 @@ class RoIDataLayer(caffe.Layer):
     def setup(self, bottom, top):
         """Setup the RoIDataLayer."""
 
+        # random.seed(cfg.RNG_SEED)
+        # np.random.seed(cfg.RNG_SEED)
+
         # parse the layer parameter string, which must be valid YAML
         layer_params = yaml.load(self.param_str_)
 

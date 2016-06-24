@@ -14,7 +14,7 @@ from caffe_model.detector_layers import ProposalLayer
 from caffe_model.other_layers import ReshapeLayer
 from caffe_model.other_layers import SoftmaxLayer
 from caffe_model.other_layers import SoftmaxWithLossLayer
-from caffe_model.other_layers import SmoothL1LossLayer
+from caffe_model.other_layers import SmoothL1LossPyLayer
 import numpy as np
 
 
@@ -103,7 +103,7 @@ class RPN(DetectorNet):
                     slots_list=[(p('cls_score_reshape'), 0), (p('anchor_target'), 0)],
                     phase='train')
         
-        m.add_layer(SmoothL1LossLayer(p('loss_bbox')),
+        m.add_layer(SmoothL1LossPyLayer(p('loss_bbox')),
                     slots_list=[(p('bbox_pred'), 0), (p('anchor_target'), 1),
                                 (p('anchor_target'), 2), (p('anchor_target'), 3)],
                     phase='train')
