@@ -34,7 +34,7 @@ class ImagesCollection(object):
         Returns:
 
         """
-        assert params['TYPE'] in ['BBOX_JSON_MARKING', 'IMAGES_DIR']
+        assert params['TYPE'] in ['BBOX_JSON_MARKING', 'IMAGES_DIR', 'GML_FACES_MARKING']
 
         self._params = params
         self._samples = None
@@ -42,16 +42,20 @@ class ImagesCollection(object):
         self._scales = params['SCALES']
         self._num_backgrounds = None
 
-        if params['TYPE'] == 'BBOX_JSON_MARKING':
+        if params['TYPE'] in ['BBOX_JSON_MARKING', 'GML_FACES_MARKING']:
+            json_format = {'BBOX_JSON_MARKING': 'default',
+                           'GML_FACES_MARKING': 'gml_faces'}[params['TYPE']]
+
             if 'MARKING_NAME' in params:
                 self._samples = \
                     load_bboxes_dataset_with_json_marking(
                         params['PATH'], params['MARKING_NAME'],
-                        self._max_size, self._scales)
+                        self._max_size, self._scales, json_format)
             else:
                 self._samples = \
                     load_bboxes_dataset_with_json_marking(
-                        params['PATH'], 'marking.json', self._max_size, self._scales)
+                        params['PATH'], 'marking.json',
+                        self._max_size, self._scales, json_format)
 
         elif params['TYPE'] == 'IMAGES_DIR':
             self._samples = \
@@ -86,6 +90,23 @@ class ImagesCollection(object):
                 self._num_backgrounds += 1
 
         return self._num_backgrounds
+
+    @property
+    def num_classes(self):
+        """ Количество используемых классов в датасете
+         (для многоклассовой классификации > 2).
+
+        Это значение вычисляется как максимальный по модулю
+        номер класса + 1.
+        """
+
+        max_class = 0
+        for sample in self._samples:
+            for object in sample.marking:
+                max_class = max(object['class'], max_class)
+
+        return max_class + 1
+
 
     def __getitem__(self, key: int) -> ImageSample:
         return self._samples[key]

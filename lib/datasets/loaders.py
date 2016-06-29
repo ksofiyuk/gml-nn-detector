@@ -11,7 +11,8 @@ from datasets.image_sample import ImageFileSampleCV
 
 def load_bboxes_dataset_with_json_marking(dataset_path: str,
                                           marking_filename: str,
-                                          max_size: int, scales: list) -> list:
+                                          max_size: int, scales: list,
+                                          json_format: str) -> list:
     """Данная функция загружает набор данных, которые представлены совокупностью
     изображений и размеченными объектами.
 
@@ -19,7 +20,7 @@ def load_bboxes_dataset_with_json_marking(dataset_path: str,
         dataset_path/marking_filename: разметка всех изображений
         dataset_path/imgs: директория, содержащая файлы изображений
 
-    Структура файла разметки:
+    Структура файла разметки 'default':
         {
             "image01.jpg": [
                 {
@@ -36,6 +37,28 @@ def load_bboxes_dataset_with_json_marking(dataset_path: str,
         }
     "image01.jpg" - относительный путь к изображению по отношению к dataset_path/imgs.
 
+    Структура файла разметки 'gml_faces':
+        {
+            "image01.jpg": {
+                "faces": [
+                    {
+                        x: координата левого верхнего угла по горизонтали,
+                        y: координата левого верхнего угла по вертикали,
+                        w: ширина объекта,
+                        h: высота объекта,
+                        class: номер класса объекта, может отсутствовать (default: 1),
+                            0 - класс фона
+                        ignore: игнорировать или нет объект (Boolean),
+                            этот параметр может отсутствовать (default: False)
+
+                        * В данной разметке могут присутствовать дополнительные поля, но они
+                        никак не будут использованы
+                    }
+                ], ...
+            }
+        }
+    "image01.jpg" - относительный путь к изображению по отношению к dataset_path/imgs.
+
     Args:
         dataset_path (str): путь к директории с разметкой и изображениями
         marking_filename (str): имя файла разметки
@@ -43,10 +66,13 @@ def load_bboxes_dataset_with_json_marking(dataset_path: str,
                         не может превосходить этого значения
         scales (list):  на этом изображении алгоритм будет применён на нескольких масштабах,
                         которые соответствуют изображениям с длиной наименьшей стороны из scales
+        json_format (str): формат файла с разметкой: "default", "gml_faces"
 
     Returns:
         list: Список объектов типа ImageFileSampleCV
     """
+    if json_format not in {"default", "gml_faces"}:
+        raise NotImplementedError(json_format)
 
     marking_path = os.path.join(dataset_path, marking_filename)
 
@@ -56,6 +82,9 @@ def load_bboxes_dataset_with_json_marking(dataset_path: str,
     samples = []
     for image_name, image_marking in sorted(marking.items()):
         image_path = os.path.join(dataset_path, 'imgs', image_name)
+
+        if json_format == 'gml_faces':
+            image_marking = image_marking['faces']
 
         for obj in image_marking:
             if 'ignore' not in obj:
