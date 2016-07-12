@@ -31,6 +31,8 @@ class RPN(DetectorNet):
         assert len(config.ANCHOR_SCALES) == len(config.ANCHOR_SHIFT_NUM_XY)
         self._num_anchors = sum([x[0] * x[1] for x in config.ANCHOR_SHIFT_NUM_XY])
         self._num_anchors *= len(config.ANCHOR_RATIOS)
+        self._num_classes = self._cfg.get('NUM_CLASSES', 1)
+
         self._losses_names = []
 
         self._scores_bottom = None
@@ -57,17 +59,17 @@ class RPN(DetectorNet):
         #             parent_layer=p('conv2'))
 
 
-        m.add_layer(ConvolutionLayer(p('cls_score'), 2 * self._num_anchors, 3, pad=0),
+        m.add_layer(ConvolutionLayer(p('cls_score'), (self._num_classes + 1) * self._num_anchors, 3, pad=0),
                     parent_layer=p('output_cls'))
 
         m.add_layer(ReshapeLayer(p('cls_score_reshape'),
-                                 reshape_dim=(0,2,-1,0)),
+                                 reshape_dim=(0,self._num_classes + 1,-1,0)),
                     parent_layer=p('cls_score'))
 
         m.add_layer(SoftmaxLayer(p('cls_prob')),
                     parent_layer=p('cls_score_reshape'))
         m.add_layer(ReshapeLayer(p('cls_prob_reshape'),
-                                 reshape_dim=(0,2 * self._num_anchors,-1,0)),
+                                 reshape_dim=(0,(self._num_classes + 1) * self._num_anchors,-1,0)),
                     parent_layer=p('cls_prob'))
 
         m.add_layer(ConvolutionLayer(p('bbox_pred'), 4 * self._num_anchors, 3, pad=0),
@@ -78,7 +80,8 @@ class RPN(DetectorNet):
         m.add_layer(ProposalLayer(p('proposal'), self._anchors_params,
                                   pre_nms_topN=self._cfg.PRE_NMS_TOP_N,
                                   post_nms_topN=self._cfg.POST_NMS_TOP_N,
-                                  nms_thresh=self._cfg.NMS_THRESH),
+                                  nms_thresh=self._cfg.NMS_THRESH,
+                                  num_classes=self._num_classes),
                     slots_list=[(p('cls_prob_reshape'), 0),
                                 (p('bbox_pred'), 0),
                                 (None, 'im_info')],
@@ -90,6 +93,7 @@ class RPN(DetectorNet):
                                  'negative_overlap': self._cfg.NEGATIVE_OVERLAP,
                                  'tn_fraction': self._cfg.TOP_NEGATIVE_FRACTION,
                                  'fg_fraction': self._cfg.FG_FRACTION,
+                                 'num_classes': self._num_classes,
                                  'name': self.name}
 
         m.add_layer(AnchorTargetLayer(p('anchor_target'), self._anchors_params,
@@ -111,8 +115,8 @@ class RPN(DetectorNet):
         self._losses_names = [p('loss_cls'), p('loss_bbox')]
 
     def extract_detections(self, net):
-        scores = net.blobs[self._scores_bottom].data.copy().reshape(-1, 1)
-        scores = np.hstack((1 - scores, scores))
+        scores = net.blobs[self._scores_bottom].data.copy().reshape(-1, self._num_classes + 1)
+        # scores = np.hstack((1 - scores, scores))
 
         rois = net.blobs[self._rois_top].data.copy()
 

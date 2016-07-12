@@ -314,7 +314,6 @@ def to_json_format(detections, object_class):
 def test_image_collection(net, model, image_collection):
     max_per_image = cfg.TEST.MAX_PER_IMAGE
     SCORE_THRESH = 0.05
-    NUM_CLASSES = 2
 
     _t = {'im_detect' : Timer(), 'misc' : Timer()}
     all_detections = {}
@@ -327,7 +326,9 @@ def test_image_collection(net, model, image_collection):
         _t['im_detect'].toc()
 
         _t['misc'].tic()
-        for j in range(1, NUM_CLASSES):
+
+        json_detections = []
+        for j in range(1, scores.shape[2]):
             inds = np.where(scores[:, j] > SCORE_THRESH)[0]
             cls_scores = scores[inds, j]
             cls_boxes = boxes[inds, j*4:(j+1)*4]
@@ -341,8 +342,10 @@ def test_image_collection(net, model, image_collection):
 
             keep = nms(detections, cfg.TEST.FINAL_NMS)
             detections = detections[keep]
-            detections = to_json_format(detections, j)
-            all_detections[image_basename] = detections
+
+            json_detections.append(to_json_format(detections, j))
+
+        all_detections[image_basename] = json_detections
 
         _t['misc'].toc()
 

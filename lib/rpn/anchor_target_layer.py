@@ -41,6 +41,7 @@ class AnchorTargetLayer(caffe.Layer):
         self._max_tn_fraction = layer_params['tn_fraction']
         self._fg_fraction = layer_params['fg_fraction']
         self._name = layer_params['name']
+        self._num_classes = layer_params['num_classes']
 
         self._anchors = generate_anchors(base_size=self._feat_stride,
                                          ratios=layer_params['anchor_ratios'],
@@ -181,7 +182,9 @@ class AnchorTargetLayer(caffe.Layer):
             #     labels[gt_argmax_overlaps] = 1
 
             # fg label: above threshold IOU
-            labels[max_overlaps >= self._positive_overlap] = 1
+            obj_classes = gt_boxes[overlaps.argmax(axis=1), 4]
+            overlap_mask = max_overlaps >= self._positive_overlap
+            labels[overlap_mask] = obj_classes[overlap_mask]
 
             if cfg.TRAIN.RPN_CLOBBER_POSITIVES:
                 # assign bg labels last so that negative labels can clobber positives
@@ -189,7 +192,7 @@ class AnchorTargetLayer(caffe.Layer):
         else:
             labels.fill(0)
 
-       # ignored label
+        # ignored label
         if len(gt_ignored_boxes):
             boxes = _square_boxes(gt_ignored_boxes) if self._square_targets else gt_ignored_boxes
             ignored_overlaps = bbox_overlaps(
@@ -203,7 +206,7 @@ class AnchorTargetLayer(caffe.Layer):
         # subsample positive labels if we have too many
         # num_fg = len(fg_inds)
         num_fg = int(self._fg_fraction * self._batchsize)
-        fg_inds = np.where(labels == 1)[0]
+        fg_inds = np.where(labels >= 1)[0]
 
         if len(fg_inds) > num_fg:
             disable_inds = npr.choice(
@@ -231,7 +234,7 @@ class AnchorTargetLayer(caffe.Layer):
 
         # subsample negative labels if we have too many
         # num_bg = max(num_fg, self._batchsize - num_fg)
-        num_bg = self._batchsize - np.sum(labels == 1)
+        num_bg = self._batchsize - np.sum(labels >= 1)
 
         bg_inds = np.where(labels == 0)[0]
         if len(bg_inds) > num_bg:
@@ -241,8 +244,14 @@ class AnchorTargetLayer(caffe.Layer):
                 # scores are (1, A, H, W) format
                 # transpose to (1, H, W, A)
                 # reshape to (1 * H * W * A, 1) where rows are ordered by (h, w, a)
-                scores = bottom[5].data[:, self._num_anchors:, :, :]
-                scores = scores.transpose((0, 2, 3, 1)).reshape((-1, 1))
+                scores = np.zeros((self._num_anchors * bottom[5].shape[2] * bottom[5].shape[3], 1))
+                for class_id in range(1, self._num_classes + 1):
+                    indx_from = class_id * self._num_anchors
+                    indx_to = indx_from + self._num_anchors
+                    tmp = bottom[5].data[:, indx_from:indx_to, :, :]
+                    tmp = tmp.transpose((0, 2, 3, 1)).reshape((-1, 1))
+                    scores += tmp
+
                 scores = scores[inds_inside]
                 order = scores[bg_inds].ravel().argsort()[::-1]
                 bg_inds = bg_inds[order]
@@ -260,7 +269,7 @@ class AnchorTargetLayer(caffe.Layer):
             bbox_targets = _compute_targets(anchors, gt_boxes[argmax_overlaps, :])
 
         bbox_inside_weights = np.zeros((len(inds_inside), 4), dtype=np.float32)
-        bbox_inside_weights[labels == 1, :] = np.array(cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS)
+        bbox_inside_weights[labels >= 1, :] = np.array(cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS)
 
         bbox_outside_weights = np.zeros((len(inds_inside), 4), dtype=np.float32)
         if cfg.TRAIN.RPN_POSITIVE_WEIGHT < 0:
@@ -272,16 +281,16 @@ class AnchorTargetLayer(caffe.Layer):
             assert ((cfg.TRAIN.RPN_POSITIVE_WEIGHT > 0) &
                     (cfg.TRAIN.RPN_POSITIVE_WEIGHT < 1))
             positive_weights = (cfg.TRAIN.RPN_POSITIVE_WEIGHT /
-                                np.sum(labels == 1))
+                                np.sum(labels >= 1))
             negative_weights = ((1.0 - cfg.TRAIN.RPN_POSITIVE_WEIGHT) /
                                 np.sum(labels == 0))
-        bbox_outside_weights[labels == 1, :] = positive_weights
+        bbox_outside_weights[labels >= 1, :] = positive_weights
         bbox_outside_weights[labels == 0, :] = negative_weights
 
         if DEBUG:
-            self._sums += bbox_targets[labels == 1, :].sum(axis=0)
-            self._squared_sums += (bbox_targets[labels == 1, :] ** 2).sum(axis=0)
-            self._counts += np.sum(labels == 1)
+            self._sums += bbox_targets[labels >= 1, :].sum(axis=0)
+            self._squared_sums += (bbox_targets[labels >= 1, :] ** 2).sum(axis=0)
+            self._counts += np.sum(labels >= 1)
             means = self._sums / self._counts
             stds = np.sqrt(self._squared_sums / self._counts - means ** 2)
             print('means:')

@@ -38,6 +38,7 @@ class ProposalLayer(caffe.Layer):
         self._pre_nms_topN = layer_params['pre_nms_topN']
         self._post_nms_topN = layer_params['post_nms_topN']
         self._nms_thresh = layer_params['nms_thresh']
+        self._num_classes = layer_params['num_classes']
 
         self._num_anchors = self._anchors.shape[0]
 
@@ -75,7 +76,7 @@ class ProposalLayer(caffe.Layer):
 
         # the first set of _num_anchors channels are bg probs
         # the second set are the fg probs, which we want
-        scores = bottom[0].data[:, self._num_anchors:, :, :]
+        scores = bottom[0].data[:, :, :, :]
         bbox_deltas = bottom[1].data
         im_info = bottom[2].data[0, :]
 
@@ -122,7 +123,8 @@ class ProposalLayer(caffe.Layer):
         # scores are (1, A, H, W) format
         # transpose to (1, H, W, A)
         # reshape to (1 * H * W * A, 1) where rows are ordered by (h, w, a)
-        scores = scores.transpose((0, 2, 3, 1)).reshape((-1, 1))
+        scores = scores.transpose((0, 2, 3, 1)).reshape((-1, self._num_classes + 1, self._num_anchors))
+        scores = scores.transpose((0, 2, 1)).reshape((-1, self._num_classes + 1))
 
         # Convert anchors into proposals via bbox transformations
         proposals = bbox_transform_inv(anchors, bbox_deltas)
@@ -134,28 +136,30 @@ class ProposalLayer(caffe.Layer):
         # (NOTE: convert min_size to input image scale stored in im_info[2])
         keep = _filter_boxes(proposals, self._min_size * im_info[2])
         proposals = proposals[keep, :]
-        scores = scores[keep]
+        scores = scores[keep, :]
 
         # 4. sort all (proposal, score) pairs by score from highest to lowest
         # 5. take top pre_nms_topN (e.g. 6000)
         t['sort'].tic()
-        order = scores.ravel().argsort()[::-1]
+        order = np.sum(scores[:, 1:], axis=1).ravel().argsort()[::-1]
         t['sort'].toc()
         if self._pre_nms_topN > 0:
             order = order[:self._pre_nms_topN]
         proposals = proposals[order, :]
-        scores = scores[order]
+        scores = scores[order, :]
 
         # 6. apply nms (e.g. threshold = 0.7)
         # 7. take after_nms_topN (e.g. 300)
         # 8. return the top proposals (-> RoIs top)
         t['nms'].tic()
-        keep = nms(np.hstack((proposals, scores)), self._nms_thresh)
+        fg_scores = np.sum(scores[:, 1:], axis=1).reshape((-1, 1))
+        keep = nms(np.hstack((proposals, fg_scores)),
+                   self._nms_thresh)
         t['nms'].toc()
         if self._post_nms_topN > 0:
             keep = keep[:self._post_nms_topN]
         proposals = proposals[keep, :]
-        scores = scores[keep]
+        scores = scores[keep, :]
 
         # Output rois blob
         # Our RPN implementation only supports a single input image, so all

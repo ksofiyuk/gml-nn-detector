@@ -32,12 +32,13 @@ class AnchorTargetLayer(PythonLayer):
 class ProposalLayer(PythonLayer):
     def __init__(self, name, anchors_params, min_size=16,
                  pre_nms_topN=12000, post_nms_topN=2000, nms_thresh=0.7,
-                 feat_stride=None):
+                 num_classes=1,feat_stride=None):
 
         self._layer_params = {'feat_stride': feat_stride, 'min_size': min_size,
                               'pre_nms_topN': pre_nms_topN,
                               'post_nms_topN': post_nms_topN,
-                              'nms_thresh': nms_thresh}
+                              'nms_thresh': nms_thresh,
+                              'num_classes': num_classes}
 
         self._layer_params.update(anchors_params)
         super(ProposalLayer, self).__init__(name, 'rpn.proposal_layer.ProposalLayer',
