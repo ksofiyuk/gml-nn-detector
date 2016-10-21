@@ -138,15 +138,31 @@ class CaffeNetworkModel(object):
                     stride = max(stride, p_stride)
 
             multipler = 1
-            if layer.params.type == 'Convolution':
+            if layer.params.type == 'Convolution' or layer.params.type == 'Deconvolution':
                 conv_strides = layer.params.convolution_param.stride
+                conv_stride_h = layer.params.convolution_param.stride_h
+                conv_stride_w = layer.params.convolution_param.stride_w
                 if conv_strides:
                     multipler = conv_strides[0]
+                if conv_stride_h or conv_stride_w:
+                    assert conv_stride_h == conv_stride_w
+                    multipler = conv_stride_h
+
             elif layer.params.type == 'Pooling':
                 multipler = layer.params.pooling_param.stride
+                pool_stride_h = layer.params.pooling_param.stride_h
+                pool_stride_w = layer.params.pooling_param.stride_w
+                if pool_stride_h or pool_stride_w:
+                    assert pool_stride_w == pool_stride_h
+                    multipler = pool_stride_w
 
-            stride *= multipler
+            if layer.params.type == 'Deconvolution':
+                assert stride % multipler == 0
+                stride //= multipler
+            else:
+                stride *= multipler
             strides[layer.name] = stride
+
 
         return strides
 
