@@ -5,6 +5,7 @@
 # Written by Konstantin Sofiyuk
 # --------------------------------------------------------
 
+import os.path as osp
 from datasets.image_sample import ImageSample
 from datasets.loaders import load_bboxes_dataset_with_json_marking
 from datasets.loaders import load_images_from_directory_without_marking
@@ -41,11 +42,12 @@ class ImagesCollection(object):
         self._max_size = params['MAX_SIZE']
         self._scales = params['SCALES']
         self._num_backgrounds = None
+        self.imgs_path = None
 
         if params['TYPE'] in ['BBOX_JSON_MARKING', 'GML_FACES_MARKING']:
             json_format = {'BBOX_JSON_MARKING': 'default',
                            'GML_FACES_MARKING': 'gml_faces'}[params['TYPE']]
-
+            self.imgs_path = osp.join(params['PATH'], 'imgs')
             if 'MARKING_NAME' in params:
                 self._samples = \
                     load_bboxes_dataset_with_json_marking(
@@ -58,6 +60,7 @@ class ImagesCollection(object):
                         self._max_size, self._scales, json_format)
 
         elif params['TYPE'] == 'IMAGES_DIR':
+            self.imgs_path = params['PATH']
             self._samples = \
                 load_images_from_directory_without_marking(
                     params['PATH'], self._max_size, self._scales)
