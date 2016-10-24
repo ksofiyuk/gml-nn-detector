@@ -30,7 +30,7 @@ class RoIDataLayer(caffe.Layer):
 
     def _get_next_normal_minibatch(self):
         minibatch = []
-        while len(minibatch) < IMS_PER_BATCH:
+        while self._imdbs_iter and len(minibatch) < IMS_PER_BATCH:
             sample = next(self._imdbs_iter)
 
             if cfg.TRAIN.USE_FLIPPED and np.random.randint(0, 2):
@@ -93,7 +93,7 @@ class RoIDataLayer(caffe.Layer):
         # np.random.seed(cfg.RNG_SEED)
 
         # parse the layer parameter string, which must be valid YAML
-        layer_params = yaml.load(self.param_str_)
+        layer_params = yaml.load(self.param_str)
 
         self._num_classes = layer_params['num_classes']
 
@@ -116,7 +116,7 @@ class RoIDataLayer(caffe.Layer):
         max_scale = max(max(x.SCALES) for x in cfg.TRAIN.DATASETS)
         max_size =  max(x.MAX_SIZE for x in cfg.TRAIN.DATASETS)
 
-        top[idx].reshape(IMS_PER_BATCH, 3, max_scale, max_size)
+        top[idx].reshape(IMS_PER_BATCH, 3, 1000, 1500)
         self._name_to_top_map['data'] = idx
         idx += 1
 
@@ -167,17 +167,21 @@ class RoIDataLayer(caffe.Layer):
         self._blobs, samples = self._get_next_minibatch()
         self._forward_images += samples
 
-        # for sample in samples:
-        #     print(sample.id, len(sample.marking), sample.max_size)
-
-        self._losses.append(self.get_last_loss())
-
         for blob_name, blob in self._blobs.items():
             top_ind = self._name_to_top_map[blob_name]
             # Reshape net's input blobs
             top[top_ind].reshape(*(blob.shape))
             # Copy data into net's input blobs
             top[top_ind].data[...] = blob.astype(np.float32, copy=False)
+
+        if not samples:
+            return
+        # for sample in samples:
+        #     print(sample.id, len(sample.marking), sample.max_size)
+
+        self._losses.append(self.get_last_loss())
+
+
 
 
     def backward(self, top, propagate_down, bottom):
@@ -191,7 +195,16 @@ class RoIDataLayer(caffe.Layer):
 
 def get_minibatch(samples, num_classes):
     """Given a roidb, construct a minibatch sampled from it."""
-    assert len(samples) == 1, "Single batch only"
+    assert len(samples) <= 1, "Single batch only"
+
+    if not samples:
+        blobs = {
+            'data': np.zeros((1, 3, 128, 128), dtype=np.float32),
+            'gt_boxes': np.empty(shape=(0,5), dtype=np.float32),
+            'ignored_boxes': np.empty(shape=(0,5), dtype=np.float32),
+            'im_info': np.array([[128, 128, 1]], dtype=np.float32)
+        }
+        return blobs, samples
 
     sample = samples[0]
     # Sample random scales to use for each image in this batch
@@ -201,12 +214,13 @@ def get_minibatch(samples, num_classes):
     im_blob, gt_boxes, ignored_boxes, im_scale = \
         _convert_sample(sample, random_scale_inds)
 
-    blobs = {'data': im_blob}
-    blobs['gt_boxes'] = gt_boxes
-    blobs['ignored_boxes'] = ignored_boxes
-    blobs['im_info'] = np.array(
-        [[im_blob.shape[2], im_blob.shape[3], im_scale]],
-        dtype=np.float32)
+    blobs = {
+        'data': im_blob,
+        'gt_boxes': gt_boxes,
+        'ignored_boxes': ignored_boxes,
+        'im_info': np.array([[im_blob.shape[2], im_blob.shape[3], im_scale]],
+                dtype=np.float32)
+    }
 
     return blobs, samples
 
@@ -230,10 +244,17 @@ def _convert_sample(sample, scale_indx):
         else:
             gt_boxes.append(box)
 
-    gt_boxes = np.array(gt_boxes, dtype=np.float32)
-    ignored_boxes = np.array(ignored_boxes, dtype=np.float32)
-    gt_boxes[0:4] *= im_scale
-    ignored_boxes[0:4] *= im_scale
+    if gt_boxes:
+        gt_boxes = np.array(gt_boxes, dtype=np.float32)
+    else:
+        gt_boxes = np.empty(shape=(0,5), dtype=np.float32)
+    if ignored_boxes:
+        ignored_boxes = np.array(ignored_boxes, dtype=np.float32)
+    else:
+        ignored_boxes = np.empty(shape=(0, 5), dtype=np.float32)
+
+    gt_boxes[:, 0:4] *= im_scale
+    ignored_boxes[:, 0:4] *= im_scale
 
     blob = im_list_to_blob([im])
 

@@ -30,7 +30,7 @@ class AnchorTargetLayer(caffe.Layer):
 
     def setup(self, bottom, top):
 
-        layer_params = json.loads(self.param_str_)
+        layer_params = json.loads(self.param_str)
         self._feat_stride = layer_params['feat_stride']
         self._iters = 0
         self._periodic_tn_enabled = True
@@ -95,11 +95,11 @@ class AnchorTargetLayer(caffe.Layer):
         t.toc()
         self._iters += 1
 
-        assert bottom[0].data.shape[0] == 1, \
+        assert bottom[0].shape[0] == 1, \
             'Only single item batches are supported'
 
         # map of shape (..., H, W)
-        height, width = bottom[0].data.shape[-2:]
+        height, width = bottom[0].shape[-2:]
 
         # GT boxes (x1, y1, x2, y2, label)
         gt_boxes = bottom[1].data
@@ -120,6 +120,10 @@ class AnchorTargetLayer(caffe.Layer):
         shift_x = np.arange(0, width) * self._feat_stride
         shift_y = np.arange(0, height) * self._feat_stride
 
+        if DEBUG:
+            for i in range(6):
+                print('bottom[{}].shape = {}'.format(i, bottom[i].data.shape))
+            print(shift_x.shape, shift_y.shape, width, height)
         shift_x, shift_y = np.meshgrid(shift_x, shift_y)
         shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
                             shift_x.ravel(), shift_y.ravel())).transpose()
@@ -129,6 +133,8 @@ class AnchorTargetLayer(caffe.Layer):
         # reshape to (K*A, 4) shifted anchors
         A = self._num_anchors
         K = shifts.shape[0]
+        if DEBUG:
+            print(self._anchors.shape, shifts.shape)
         all_anchors = (self._anchors.reshape((1, A, 4)) +
                        shifts.reshape((1, K, 4)).transpose((1, 0, 2)))
         all_anchors = all_anchors.reshape((K * A, 4))
@@ -201,7 +207,7 @@ class AnchorTargetLayer(caffe.Layer):
 
             iargmax_overlaps = ignored_overlaps.argmax(axis=1)
             imax_overlaps = ignored_overlaps[np.arange(len(inds_inside)), iargmax_overlaps]
-            labels[imax_overlaps > 0.2] = -1
+            labels[imax_overlaps > 0.3] = -1
 
         # subsample positive labels if we have too many
         # num_fg = len(fg_inds)
@@ -244,7 +250,9 @@ class AnchorTargetLayer(caffe.Layer):
                 # scores are (1, A, H, W) format
                 # transpose to (1, H, W, A)
                 # reshape to (1 * H * W * A, 1) where rows are ordered by (h, w, a)
+
                 scores = np.zeros((self._num_anchors * bottom[5].shape[2] * bottom[5].shape[3], 1))
+
                 for class_id in range(1, self._num_classes + 1):
                     indx_from = class_id * self._num_anchors
                     indx_to = indx_from + self._num_anchors

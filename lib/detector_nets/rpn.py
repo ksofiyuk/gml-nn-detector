@@ -28,8 +28,11 @@ class RPN(DetectorNet):
             'anchor_shift_num_xy': config.ANCHOR_SHIFT_NUM_XY
         }
 
-        assert len(config.ANCHOR_SCALES) == len(config.ANCHOR_SHIFT_NUM_XY)
-        self._num_anchors = sum([x[0] * x[1] for x in config.ANCHOR_SHIFT_NUM_XY])
+        assert len(config.ANCHOR_SCALES) == len(config.ANCHOR_SHIFT_NUM_XY) or len(config.ANCHOR_SHIFT_NUM_XY) == 1
+        if len(config.ANCHOR_SHIFT_NUM_XY) == 1:
+            self._num_anchors = len(config.ANCHOR_SCALES)
+        else:
+            self._num_anchors = sum([x[0] * x[1] for x in config.ANCHOR_SHIFT_NUM_XY])
         self._num_anchors *= len(config.ANCHOR_RATIOS)
         self._num_classes = self._cfg.get('NUM_CLASSES', 1)
 

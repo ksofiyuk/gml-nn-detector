@@ -273,3 +273,46 @@ def segments_overlap(l, r):
     if far_l > far_r:
         return r[1]
     return far_l - r[0]
+
+
+def resize_sample(sample, resize_type, target_size):
+    """Масштабирование объекта, представленного фрагментом изображения
+
+    Args:
+        sample(tuple): пара (<фрагмент изображения в формате BGR np.uint8>,
+                             <разметка объектов, содержащихся в этом фрагменте>)
+                       Разметка объектов должна быть представлена в виде списка, первым элеметом
+                       которого является ключевой объект фрагмента (расположенный в его центре)
+        resize_type(str): Целевой параметр масштабирования, именно его значение будет приведено
+            к требуемому размеру. Возможны следующие значения:
+                1) 'width' - относительно ширины фрагмента
+                2) 'height' - относительно высоты фрагмента
+                3) 'object_width' - относительно ширины ключевого объекта внутри фрагмента
+                4) 'object_height' - относительно высоты ключевого объекта внутри фрагмента
+        target_size(int): новое значение целевого параметра масштабирования
+
+    Returns:
+        tuple: отмасштабированный сэмпл в формате аналогичном входному аргументу sample
+    """
+
+    if resize_type == 'width':
+        scale_value = target_size / sample[0].size[1]
+    elif resize_type == 'height':
+        scale_value = target_size / sample[0].size[0]
+    elif resize_type == 'object_width':
+        scale_value = target_size / sample[1][0]['w']
+    elif resize_type == 'object_height':
+        scale_value = target_size / sample[1][0]['h']
+    else:
+        raise NotImplementedError(resize_type)
+
+    nmarking = deepcopy(sample[1])
+    scaled_image = cv2.resize(sample[0], (0, 0), fx=scale_value, fy=scale_value)
+
+    for obj in nmarking:
+        obj['x'] *= scale_value
+        obj['y'] *= scale_value
+        obj['w'] *= scale_value
+        obj['h'] *= scale_value
+
+    return (scaled_image, nmarking)

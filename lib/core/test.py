@@ -9,18 +9,15 @@
 """Test a Fast R-CNN network on an imdb (image database)."""
 
 from core.config import cfg, get_output_dir
-from core.bbox_transform import clip_boxes, bbox_transform_inv
-import argparse
 from utils.timer import Timer
 import numpy as np
 import cv2
 import caffe
 from core.nms_wrapper import nms
-import pickle
 from utils.blob import im_list_to_blob
 import os
-import re
 import json
+from pathlib import PurePath
 
 from datasets.collections import ImagesCollection
 from datasets.iterators import DirectIterator
@@ -319,7 +316,7 @@ def test_image_collection(net, model, image_collection):
     all_detections = {}
 
     for indx, sample in enumerate(DirectIterator(image_collection)):
-        image_basename = os.path.basename(sample.id)
+        image_basename = str(PurePath(sample.id).relative_to(image_collection.imgs_path))
 
         _t['im_detect'].tic()
         scores, boxes = im_detect(net, model, sample)
@@ -328,7 +325,7 @@ def test_image_collection(net, model, image_collection):
         _t['misc'].tic()
 
         json_detections = []
-        for j in range(1, scores.shape[2]):
+        for j in range(1, scores.shape[1]):
             inds = np.where(scores[:, j] > SCORE_THRESH)[0]
             cls_scores = scores[inds, j]
             cls_boxes = boxes[inds, j*4:(j+1)*4]
@@ -343,7 +340,7 @@ def test_image_collection(net, model, image_collection):
             keep = nms(detections, cfg.TEST.FINAL_NMS)
             detections = detections[keep]
 
-            json_detections.append(to_json_format(detections, j))
+            json_detections += to_json_format(detections, j)
 
         all_detections[image_basename] = json_detections
 
@@ -361,7 +358,9 @@ def test_net(weights_path, output_dir):
 
     fd, test_prototxt = model.create_temp_test_prototxt()
     net = caffe.Net(test_prototxt, weights_path, caffe.TEST)
+    caffe.optimize_memory(net)
     net.name = os.path.splitext(os.path.basename(weights_path))[0]
+
     os.close(fd)
 
     if not os.path.exists(output_dir):
@@ -377,6 +376,6 @@ def test_net(weights_path, output_dir):
 
         output_path = os.path.join(output_dir, dataset.OUTPUT_FILE)
         with open(output_path, 'w') as f:
-            json.dump(detections, f, indent=4)
+            json.dump(detections, f, indent=2)
 
         print('Output detections file: %s\n' % output_path)
