@@ -147,6 +147,11 @@ __C.TRAIN.RPN_SQUARE_TARGETS = False
 
 __C.TRAIN.DATASET = 'default'
 
+# Каждое изображение при обучении будет случайно масштабироваться относительно
+# целевого размера, так что размер наименьшей стороны будет лежать
+# в отрезке [(1 - SCALE_JITTERING/100)*SCALE, (1 + SCALE_JITTERING/100)*SCALE]
+__C.TRAIN.SCALE_JITTERING = 0.0
+
 __C.TRAIN.DOUBLE_GENERATE = False
 __C.TRAIN.REDISTRIBUTE_CLASSES = False
 __C.TRAIN.USE_LMDB = False

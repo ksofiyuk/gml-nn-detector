@@ -228,6 +228,10 @@ def get_minibatch(samples, num_classes):
 def _convert_sample(sample, scale_indx):
     target_size = sample.scales[scale_indx]
 
+    if cfg.TRAIN.SCALE_JITTERING > 0:
+        r = (2 * cfg.TRAIN.SCALE_JITTERING * random.random() - cfg.TRAIN.SCALE_JITTERING) / 100.0
+        target_size = int(target_size * (1 + r))
+
     im, im_scale = prep_im_for_blob(sample.bgr_data, cfg.PIXEL_MEANS,
                                     target_size, sample.max_size)
 
