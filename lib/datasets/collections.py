@@ -25,6 +25,7 @@ class ImagesCollection(object):
         Args:
             params: Параметры коллекции, имеют формат:
                 {
+                    NAME: имя датасета (default None)
                     TYPE: тип датасета
                     PATH: путь к датасету
                     MARKING_NAME: (опционально) только для 'BBOX_JSON_MARKING'
@@ -43,6 +44,7 @@ class ImagesCollection(object):
         self._scales = params['SCALES']
         self._num_backgrounds = None
         self.imgs_path = None
+        self._name = params.get('NAME', None)
 
         if params['TYPE'] in ['BBOX_JSON_MARKING', 'GML_FACES_MARKING']:
             json_format = {'BBOX_JSON_MARKING': 'default',
@@ -61,9 +63,11 @@ class ImagesCollection(object):
 
         elif params['TYPE'] == 'IMAGES_DIR':
             self.imgs_path = params['PATH']
+
+            scan_recurse = params.get('RECURSE', False)
             self._samples = \
                 load_images_from_directory_without_marking(
-                    params['PATH'], self._max_size, self._scales)
+                    params['PATH'], self._max_size, self._scales, scan_recurse)
 
     @property
     def max_size(self) -> int:
@@ -109,7 +113,6 @@ class ImagesCollection(object):
                 max_class = max(object['class'], max_class)
 
         return max_class + 1
-
 
     def __getitem__(self, key: int) -> ImageSample:
         return self._samples[key]

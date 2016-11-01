@@ -6,6 +6,7 @@
 # --------------------------------------------------------
 import json
 import os
+from pathlib import Path
 from datasets.image_sample import ImageFileSampleCV
 
 
@@ -100,7 +101,8 @@ def load_bboxes_dataset_with_json_marking(dataset_path: str,
 
 
 def load_images_from_directory_without_marking(
-        images_path: str, max_size: int, scales: list) -> list:
+        images_path: str, max_size: int, scales: list,
+        recurse: bool) -> list:
     """Загружает все изображения в форматах *.jpg,*.jpeg,*.png
     из указанной директории без разметки.
 
@@ -108,13 +110,24 @@ def load_images_from_directory_without_marking(
 
     Args:
         images_path: путь к папке, содержащей изображения
+        max_size: максимальный размер стороны изображения для данного датасета
+        scales: список масштабов
+        recurse: искать изображения рекурсивно во всех поддиректориях
     Returns:
         list: Список объектов типа ImageFileSampleCV
     """
 
-    files = [os.path.join(images_path, file_name)
-             for file_name in os.listdir(images_path)]
-    files = filter(os.path.isfile, files)
-    images_files = sorted(filter(lambda x: x.endswith(('.jpg', '.png', '.jpeg')), files))
+    images_dir = Path(images_path)
+    images_files = []
+    for format in ['*.jpg', '*.jpeg', '*.png']:
+        if recurse:
+            images_files += list(images_dir.rglob(format.lower()))
+            images_files += list(images_dir.rglob(format.upper()))
+        else:
+            images_files += list(images_dir.glob(format.lower()))
+            images_files += list(images_dir.glob(format.upper()))
 
-    return [ImageFileSampleCV(image_path, [], max_size, scales) for image_path in images_files]
+    images_files = sorted(list(set(images_files)))
+
+    return [ImageFileSampleCV(str(image_name), [], max_size, scales)
+            for image_name in images_files]
