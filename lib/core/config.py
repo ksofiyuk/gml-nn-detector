@@ -224,6 +224,9 @@ __C.PIXEL_MEANS = np.array([[[102.9801, 115.9465, 122.7717]]])
 # For reproducibility
 __C.RNG_SEED = 3
 
+# Draw train and test net
+__C.DRAW_NET = False
+
 # A small number that's used many times
 __C.EPS = 1e-14
 

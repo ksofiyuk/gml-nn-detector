@@ -7,6 +7,7 @@
 # --------------------------------------------------------
 
 import caffe
+import caffe.draw
 from core.config import cfg
 from utils.timer import Timer
 import numpy as np
@@ -155,6 +156,11 @@ def train_net(output_dir):
     sw = SolverWrapper(solver.get_path(), imgs_dbs, output_dir,
                        pretrained_model=pretrained_model,
                        losses_names=model.get_loss_blobs_names())
+
+    if cfg.DRAW_NET:
+        caffe.draw.draw_net_to_file(model.net_params('train'),
+                                    os.path.join(output_dir, 'net.png'),
+                                    'LR')
 
     print('Solving...')
     model_paths = sw.train_model(max_iters)

@@ -30,4 +30,4 @@ time ./tools/test_net.py --gpu 0 \
   --net ${NET_FINAL} \
   --cfg exps/${EXP_NAME}/config.yml \
   --exp_dir ${EXP_NAME} \
-  ${EXTRA_ARGS}
+  --datasets ${EXTRA_ARGS}

@@ -353,7 +353,7 @@ def test_image_collection(net, model, image_collection):
     return all_detections
 
 
-def test_net(weights_path, output_dir):
+def test_net(weights_path, output_dir, dataset_names=None):
     model = DetectorModel(cfg.MODEL)
 
     fd, test_prototxt = model.create_temp_test_prototxt()
@@ -366,7 +366,19 @@ def test_net(weights_path, output_dir):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    for indx, dataset in enumerate(cfg.TEST.DATASETS):
+    if cfg.DRAW_NET:
+        from caffe import draw
+        caffe.draw.draw_net_to_file(model.net_params('test'),
+                                    os.path.join(output_dir, 'net.png'),
+                                    'LR')
+
+    if dataset_names:
+        datasets = [ds for ds in cfg.TEST.DATASETS
+                    if ds.get('NAME', None) in set(dataset_names)]
+    else:
+        datasets = cfg.TEST.DATASETS
+
+    for indx, dataset in enumerate(datasets):
         image_collection = ImagesCollection(dataset)
 
         print("# %d/%d dataset %s: %d images" %

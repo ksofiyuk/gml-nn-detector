@@ -26,10 +26,6 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description='Test a Fast R-CNN network')
 
-    # parser.add_argument('--imdir', dest='imdir', help='Path to the directory with images',
-    #                     type=str, default=None)
-    # parser.add_argument('--output', help='Path to the JSON file to save resulting detections',
-    #                     type=str, default=None)
     parser.add_argument('--gpu', dest='gpu_id', help='GPU id to use',
                         default=0, type=int)
     parser.add_argument('--net', dest='caffemodel',
@@ -41,6 +37,7 @@ def parse_args():
                         help='set config keys', default=None,
                         nargs=argparse.REMAINDER)
     parser.add_argument('--exp_dir', dest='exp_dir', default=None, type=str)
+    parser.add_argument('--datasets', nargs='*', default=[], required=False)
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -70,6 +67,9 @@ if __name__ == '__main__':
     caffe.set_mode_gpu()
     caffe.set_device(args.gpu_id)
 
-    time_suffix = 'test_' + datetime.datetime.now().strftime("%d_%m_%Y_%H_%M")
-    output_dir = get_output_dir(time_suffix, None)
-    test_net(args.caffemodel, output_dir)
+    output_dir_name = 'test'
+    if args.datasets:
+        output_dir_name += '_' + '_'.join(args.datasets)
+    output_dir_name += '_' + datetime.datetime.now().strftime("%d_%m_%Y_%H_%M")
+    output_dir = get_output_dir(output_dir_name, None)
+    test_net(args.caffemodel, output_dir, args.datasets)
