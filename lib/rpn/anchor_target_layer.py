@@ -350,13 +350,22 @@ class AnchorTargetLayer(caffe.Layer):
         if len(ignored_boxes):
             boxes = _square_boxes(ignored_boxes, self._ratios[0], self._square_targets_ky) \
                 if self._square_targets else ignored_boxes
+            ignored_iou = bbox_overlaps(
+                np.ascontiguousarray(valid_anchors, dtype=np.float),
+                np.ascontiguousarray(boxes, dtype=np.float),
+                compute_iou=True)
+            iargmax_iou = ignored_iou.argmax(axis=1)
+            imax_iou = ignored_iou[np.arange(num_valid_anchors), iargmax_iou]
+
             ignored_overlaps = bbox_overlaps(
                 np.ascontiguousarray(valid_anchors, dtype=np.float),
-                np.ascontiguousarray(boxes, dtype=np.float))
+                np.ascontiguousarray(boxes, dtype=np.float),
+                compute_iou=False)
 
             iargmax_overlaps = ignored_overlaps.argmax(axis=1)
             imax_overlaps = ignored_overlaps[np.arange(num_valid_anchors), iargmax_overlaps]
-            labels[imax_overlaps > 0.3] = -1
+
+            labels[(imax_iou > 0.2) & (imax_overlaps > 0.6)] = -1
 
         # subsample positive labels if we have too many
         fg_inds = np.where(labels >= 1)[0]

@@ -14,7 +14,8 @@ ctypedef np.float_t DTYPE_t
 
 def bbox_overlaps(
         np.ndarray[DTYPE_t, ndim=2] boxes,
-        np.ndarray[DTYPE_t, ndim=2] query_boxes):
+        np.ndarray[DTYPE_t, ndim=2] query_boxes,
+        bint compute_iou = True):
     """
     Parameters
     ----------
@@ -46,10 +47,17 @@ def bbox_overlaps(
                     max(boxes[n, 1], query_boxes[k, 1]) + 1
                 )
                 if ih > 0:
-                    ua = float(
-                        (boxes[n, 2] - boxes[n, 0] + 1) *
-                        (boxes[n, 3] - boxes[n, 1] + 1) +
-                        box_area - iw * ih
-                    )
-                    overlaps[n, k] = iw * ih / ua
+                    if compute_iou:
+                        ua = float(
+                            (boxes[n, 2] - boxes[n, 0] + 1) *
+                            (boxes[n, 3] - boxes[n, 1] + 1) +
+                            box_area - iw * ih
+                        )
+                        overlaps[n, k] = iw * ih / ua
+                    else:
+                        ua = float(
+                            (boxes[n, 2] - boxes[n, 0] + 1) *
+                            (boxes[n, 3] - boxes[n, 1] + 1)
+                        )
+                        overlaps[n, k] = iw * ih / ua
     return overlaps
