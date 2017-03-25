@@ -17,6 +17,7 @@ from core.config import cfg
 import numpy as np
 import numpy.random as npr
 import yaml
+import cv2
 
 from utils.blob import prep_im_for_blob, im_list_to_blob
 from datasets.iterators import MultiRandomOrderIterator
@@ -224,6 +225,24 @@ def get_minibatch(samples, num_classes):
 
     return blobs, samples
 
+def illumination_jittering(im_sample, value):
+    illumination = np.random.uniform(-1, 1) * value * 128
+    light_map = np.full(im_sample.shape, illumination)
+    return cv2.add(im_sample, light_map, dtype=cv2.CV_8U)
+
+def contrast_jittering(im_sample, value):
+    im_sample = im_sample.copy()
+    contrast = 1 + np.random.uniform(-1, 1) * value
+    for ch in range(3):
+        im_sample[:, :, ch] = cv2.multiply(im_sample[:, :, ch], contrast, dtype=cv2.CV_8U)
+    return im_sample
+
+def gauss_noise_jittering(im_sample, value):
+    noise_map = np.zeros(im_sample.shape)
+    cv2.randn(noise_map, 0, np.random.uniform(0, value))
+    # noise_map = np.random.normal(0.0, np.random.uniform(0, value), im_sample.shape)
+    return cv2.add(im_sample, noise_map, dtype=cv2.CV_8U)
+
 
 def _convert_sample(sample, scale_indx):
     target_size = sample.scales[scale_indx]
@@ -232,16 +251,36 @@ def _convert_sample(sample, scale_indx):
         r = (2 * cfg.TRAIN.SCALE_JITTERING * random.random() - cfg.TRAIN.SCALE_JITTERING) / 100.0
         target_size = int(target_size * (1 + r))
 
-    im, im_scale = prep_im_for_blob(sample.bgr_data, cfg.PIXEL_MEANS,
-                                    target_size, sample.max_size)
+    ar_mult = 1.0
+    if cfg.TRAIN.RATIO_JITTERING > 0:
+        r = (2 * cfg.TRAIN.RATIO_JITTERING * random.random() - cfg.TRAIN.RATIO_JITTERING) / 100.0
+        ar_mult += r
+
+    sample_image = sample.bgr_data.copy()
+
+    if random.random() < 0.2:
+        ksize = 2 * np.random.randint(1, 3) + 1
+        sample_image = cv2.GaussianBlur(sample_image, (ksize,ksize), 0)
+
+    sample_image = illumination_jittering(sample_image, 0.3)
+    sample_image = contrast_jittering(sample_image, 0.3)
+    sample_image = gauss_noise_jittering(sample_image, 10)
+
+
+    im, im_scale = prep_im_for_blob(sample_image, cfg.PIXEL_MEANS,
+                                    target_size, sample.max_size, ar_mult)
+    old_ratio = sample.bgr_data.shape[1] / sample.bgr_data.shape[0]
+    new_ratio = im.shape[1] / im.shape[0]
+
+    ar_mult = new_ratio / old_ratio
 
     gt_boxes = []
     ignored_boxes = []
     for x in sample.marking:
         if x['class'] < 1:
             continue
-        box = [x['x'], x['y'],
-               x['x'] + x['w'] - 1, x['y'] + x['h'] - 1,
+        box = [x['x'] * ar_mult, x['y'],
+               (x['x'] + x['w'] - 1) * ar_mult, x['y'] + x['h'] - 1,
                x['class']]
         if x['ignore']:
             ignored_boxes.append(box)

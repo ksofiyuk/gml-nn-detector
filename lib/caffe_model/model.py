@@ -73,7 +73,9 @@ class CaffeNetworkModel(object):
         assert len(parent_layer.slots_out) == 1
         assert not set(self._layers_phases.keys()) & set(model._layers_phases.keys())
 
-        input_slots[0].connect(parent_layer.slots_out[0])
+        for input_slot in input_slots:
+            if len(input_slot.layer.slots_in) == 1:
+                input_slot.connect(parent_layer.slots_out[0])
 
         self._named_slots.update(model._named_slots)
         self._layers_phases.update(model._layers_phases)
@@ -128,25 +130,39 @@ class CaffeNetworkModel(object):
 
     def get_layers_strides(self, phase='any'):
         strides = dict()
+        layer_receptive_field = dict()
 
         for layer in self.get_topsorted_layers(phase):
             stride = 1
+            receptive_field = 1
 
             for slots_in in layer.slots_in:
                 for slot in slots_in.connected:
-                    p_stride = strides.get(slot.layer.name, 1)
-                    stride = max(stride, p_stride)
+                    stride = max(stride, strides.get(slot.layer.name, 1))
+                    receptive_field = max(receptive_field,
+                                          layer_receptive_field.get(slot.layer.name, 1))
 
             multipler = 1
+            kernel_size = 1
             if layer.params.type == 'Convolution' or layer.params.type == 'Deconvolution':
                 conv_strides = layer.params.convolution_param.stride
                 conv_stride_h = layer.params.convolution_param.stride_h
                 conv_stride_w = layer.params.convolution_param.stride_w
+
                 if conv_strides:
                     multipler = conv_strides[0]
                 if conv_stride_h or conv_stride_w:
                     assert conv_stride_h == conv_stride_w
                     multipler = conv_stride_h
+
+                kernel_sizes = layer.params.convolution_param.kernel_size
+                kernel_size_h = layer.params.convolution_param.kernel_h
+                kernel_size_w = layer.params.convolution_param.kernel_w
+                if kernel_sizes:
+                    kernel_size = kernel_sizes[0]
+                if kernel_size_h or kernel_size_w:
+                    assert kernel_size_h == kernel_size_w
+                    kernel_size = kernel_size_h
 
             elif layer.params.type == 'Pooling':
                 multipler = layer.params.pooling_param.stride
@@ -156,13 +172,23 @@ class CaffeNetworkModel(object):
                     assert pool_stride_w == pool_stride_h
                     multipler = pool_stride_w
 
+                kernel_size = layer.params.pooling_param.kernel_size
+                kernel_size_h = layer.params.pooling_param.kernel_h
+                kernel_size_w = layer.params.pooling_param.kernel_w
+                if kernel_size_h or kernel_size_w:
+                    assert kernel_size_h == kernel_size_w
+                    kernel_size = kernel_size_h
+
             if layer.params.type == 'Deconvolution':
                 assert stride % multipler == 0
                 stride //= multipler
             else:
+                receptive_field += 2 * ((kernel_size - 1) // 2) * stride
                 stride *= multipler
-            strides[layer.name] = stride
 
+            strides[layer.name] = stride
+            layer_receptive_field[layer.name] = receptive_field
+            # print(layer.name, receptive_field)
 
         return strides
 

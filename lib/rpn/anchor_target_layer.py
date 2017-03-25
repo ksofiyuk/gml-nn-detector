@@ -35,6 +35,8 @@ class AnchorTargetLayer(caffe.Layer):
         self._iters = 0
         self._periodic_tn_enabled = True
         self._square_targets = layer_params['square_targets']
+        self._square_targets_ky = layer_params.get('square_targets_ky', 0.5)
+
         self._positive_overlap = layer_params['positive_overlap']
         self._negative_overlap = layer_params['negative_overlap']
         self._batchsize = layer_params['batchsize']
@@ -42,6 +44,10 @@ class AnchorTargetLayer(caffe.Layer):
         self._fg_fraction = layer_params['fg_fraction']
         self._name = layer_params['name']
         self._num_classes = layer_params['num_classes']
+        self._ratios = layer_params['anchor_ratios']
+
+
+        assert self._square_targets and len(self._ratios) == 1
 
         self._anchors = generate_anchors(base_size=self._feat_stride,
                                          ratios=layer_params['anchor_ratios'],
@@ -108,8 +114,9 @@ class AnchorTargetLayer(caffe.Layer):
         # im_info
         im_info = bottom[3].data[0, :]
 
-        if 0 and DEBUG:
+        if DEBUG:
             print('')
+            print('class_distrib', gt_boxes[:, 4])
             print('im_size: ({}, {})'.format(im_info[0], im_info[1]))
             print('scale: {}'.format(im_info[2]))
             print('height, width: ({}, {})'.format(height, width))
@@ -120,7 +127,7 @@ class AnchorTargetLayer(caffe.Layer):
         shift_x = np.arange(0, width) * self._feat_stride
         shift_y = np.arange(0, height) * self._feat_stride
 
-        if DEBUG:
+        if 0 and DEBUG:
             for i in range(6):
                 print('bottom[{}].shape = {}'.format(i, bottom[i].data.shape))
             print(shift_x.shape, shift_y.shape, width, height)
@@ -152,6 +159,7 @@ class AnchorTargetLayer(caffe.Layer):
         if DEBUG:
             print('total_anchors', total_anchors)
             print('inds_inside', len(inds_inside))
+            print('sq_ky:', self._square_targets_ky)
 
         # keep only inside anchors
         anchors = all_anchors[inds_inside, :]
@@ -166,12 +174,14 @@ class AnchorTargetLayer(caffe.Layer):
         # overlaps (ex, gt)
 
         if gt_boxes.shape[0]:
-            boxes = _square_boxes(gt_boxes) if self._square_targets else gt_boxes
+            boxes = _square_boxes(gt_boxes, self._ratios[0], self._square_targets_ky) \
+                if self._square_targets else gt_boxes
             overlaps = bbox_overlaps(
                 np.ascontiguousarray(anchors, dtype=np.float),
                 np.ascontiguousarray(boxes, dtype=np.float))
 
             argmax_overlaps = overlaps.argmax(axis=1)
+
             max_overlaps = overlaps[np.arange(len(inds_inside)), argmax_overlaps]
 
             if not cfg.TRAIN.RPN_CLOBBER_POSITIVES:
@@ -188,7 +198,8 @@ class AnchorTargetLayer(caffe.Layer):
             #     labels[gt_argmax_overlaps] = 1
 
             # fg label: above threshold IOU
-            obj_classes = gt_boxes[overlaps.argmax(axis=1), 4]
+
+            obj_classes = gt_boxes[argmax_overlaps, 4]
             overlap_mask = max_overlaps >= self._positive_overlap
             labels[overlap_mask] = obj_classes[overlap_mask]
 
@@ -200,7 +211,8 @@ class AnchorTargetLayer(caffe.Layer):
 
         # ignored label
         if len(gt_ignored_boxes):
-            boxes = _square_boxes(gt_ignored_boxes) if self._square_targets else gt_ignored_boxes
+            boxes = _square_boxes(gt_ignored_boxes, self._ratios[0], self._square_targets_ky) \
+                if self._square_targets else gt_ignored_boxes
             ignored_overlaps = bbox_overlaps(
                 np.ascontiguousarray(anchors, dtype=np.float),
                 np.ascontiguousarray(boxes, dtype=np.float))
@@ -314,15 +326,17 @@ class AnchorTargetLayer(caffe.Layer):
 
         if DEBUG:
             print(self._name + ': max max_overlap', np.max(max_overlaps) if 'max_overlaps' in locals() else 0)
-            print(self._name + ': num_positive', np.sum(labels == 1))
+            print(self._name + ': num_positive', np.sum(labels >= 1))
             print(self._name + ': num_negative', np.sum(labels == 0))
-            self._fg_sum += np.sum(labels == 1)
+            self._fg_sum += np.sum(labels >= 1)
             self._bg_sum += np.sum(labels == 0)
             self._count += 1
             print(self._name + ': num_positive avg', self._fg_sum / self._count)
             print(self._name + ': num_negative avg', self._bg_sum / self._count)
 
         # labels
+        # print(np.unique(labels))
+        # labels[labels >= 1] = 1
         labels = labels.reshape((1, height, width, A)).transpose(0, 3, 1, 2)
         labels = labels.reshape((1, 1, A * height, width))
         top[0].reshape(*labels.shape)
@@ -385,16 +399,16 @@ def _compute_targets(ex_rois, gt_rois):
     return bbox_transform(ex_rois, gt_rois[:, :4]).astype(np.float32, copy=False)
 
 
-def _square_boxes(boxes):
+def _square_boxes(boxes, ratio, ky=0.5):
     if boxes.shape[0] == 0:
         return boxes
 
     ret = boxes.copy()
-    gt_sz = np.sqrt((boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3]-boxes[:, 1]))
+    gt_sz = np.sqrt((boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3]-boxes[:, 1]) / ratio)
     gt_cntr_x = 0.5 * (boxes[:, 0] + boxes[:, 2])
-    gt_cntr_y = 0.5 * (boxes[:, 1] + boxes[:, 3])
+    gt_cntr_y = ky * (boxes[:, 1] + boxes[:, 3])
     ret[:, 0] = gt_cntr_x - gt_sz * 0.5
-    ret[:, 1] = gt_cntr_y - gt_sz * 0.5
+    ret[:, 1] = gt_cntr_y - gt_sz * 0.5 * ratio
     ret[:, 2] = gt_cntr_x + gt_sz * 0.5
-    ret[:, 3] = gt_cntr_y + gt_sz * 0.5
+    ret[:, 3] = gt_cntr_y + gt_sz * 0.5 * ratio
     return ret

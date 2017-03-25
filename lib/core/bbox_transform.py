@@ -27,6 +27,34 @@ def bbox_transform(ex_rois, gt_rois):
         (targets_dx, targets_dy, targets_dw, targets_dh)).transpose()
     return targets
 
+
+def width_height_transform(wh, num_scales=8, scale_base=60, scale_power=1.45):
+    gmask = (wh[:, 1] > 0) * (wh[:, 0] > 0)
+
+    labels = np.round(np.log(wh[gmask, 1] / scale_base) / np.log(scale_power))
+    labels = np.minimum(labels, num_scales - 1)
+    labels = np.maximum(labels, 0)
+
+    out = np.zeros((wh.shape[0], num_scales, 4)) + 7777
+
+    gmask_indices = np.where(gmask)[0]
+    for ds in [-1, 0, 1]:
+        nlabels = labels + ds
+
+        bases = (scale_base * (scale_power ** (nlabels))).reshape((-1, 1))
+        targets = np.zeros((np.sum(gmask), 4))
+        targets[:, 0:2] = np.log(wh[gmask, 0:2] / np.hstack((bases, bases)))
+        targets[:, 2:4] = wh[gmask, 2:4] / np.hstack((bases, bases))
+
+        for i in range(num_scales):
+            mask = (nlabels == i)
+            out[gmask_indices[mask], i, :] = targets[mask, :]
+
+    rlabels = -1 * np.ones(wh.shape[0])
+    rlabels[gmask] = labels
+    return rlabels, out.reshape((wh.shape[0], 4 * num_scales))
+
+
 def bbox_transform_inv(boxes, deltas):
     if boxes.shape[0] == 0:
         return np.zeros((0, deltas.shape[1]), dtype=deltas.dtype)

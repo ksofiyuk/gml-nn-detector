@@ -17,6 +17,7 @@ from core.nms_wrapper import nms
 from utils.blob import im_list_to_blob
 import os
 import json
+import pickle
 from pathlib import PurePath
 
 from datasets.collections import ImagesCollection
@@ -113,6 +114,20 @@ def _get_blobs(sample, target_size, rois):
 
 
 def fixed_scale_detect(net, model, sample, target_size, boxes=None):
+    blobs_out, im_scales = fixed_scale_forward(net, model, sample, target_size, boxes)
+
+    rois, scores = model.extract_detections(net)
+
+    assert len(im_scales) == 1, "Only single-image batch implemented"
+
+    # unscale back to raw image space
+    boxes = rois[:, 1:5] / im_scales[0]
+    pred_boxes = np.tile(boxes, (1, scores.shape[1]))
+
+    return scores, pred_boxes
+
+
+def fixed_scale_forward(net, model, sample, target_size, boxes=None):
     blobs, im_scales = _get_blobs(sample, target_size, boxes)
 
     im_blob = blobs['data']
@@ -122,58 +137,16 @@ def fixed_scale_detect(net, model, sample, target_size, boxes=None):
 
     # reshape network inputs
     net.blobs['data'].reshape(*(blobs['data'].shape))
-    net.blobs['im_info'].reshape(*(blobs['im_info'].shape))
 
     # do forward
     forward_kwargs = {'data': blobs['data'].astype(np.float32, copy=False)}
-    forward_kwargs['im_info'] = blobs['im_info'].astype(np.float32, copy=False)
+
+    if 'im_info' in net.blobs:
+        net.blobs['im_info'].reshape(*(blobs['im_info'].shape))
+        forward_kwargs['im_info'] = blobs['im_info'].astype(np.float32, copy=False)
 
     blobs_out = net.forward(**forward_kwargs)
-    rois, scores = model.extract_detections(net)
-
-    assert len(im_scales) == 1, "Only single-image batch implemented"
-
-    # unscale back to raw image space
-    boxes = rois[:, 1:5] / im_scales[0]
-    pred_boxes = np.tile(boxes, (1, scores.shape[1]))
-
-    # if cfg.TEST.BBOX_REG:
-    #     # Apply bounding-box regression deltas
-    #
-    #     if cfg.TEST.RPN_ONLY:
-    #         pred_boxes = bbox_transform_inv(boxes, np.zeros((len(boxes), 8), dtype=np.float32))
-    #     else:
-    #         box_deltas = blobs_out['bbox_pred']
-    #         pred_boxes = bbox_transform_inv(boxes, box_deltas)
-    #         pred_boxes = clip_boxes(pred_boxes, im.shape)
-    # else:
-    #     # Simply repeat the boxes, once for each class
-    #     pred_boxes = np.tile(boxes, (1, scores.shape[1]))
-
-    return scores, pred_boxes
-
-
-def vis_detections(im, class_name, dets, thresh=0.3):
-    """Visual debugging of detections."""
-    import matplotlib.pyplot as plt
-    plt.switch_backend('Qt5Agg')
-
-    im = im[:, :, (2, 1, 0)]
-
-    for i in range(np.minimum(10, dets.shape[0])):
-        bbox = dets[i, :4]
-        score = dets[i, -1]
-        if score > thresh:
-            plt.cla()
-            plt.imshow(im)
-            plt.gca().add_patch(
-                plt.Rectangle((bbox[0], bbox[1]),
-                              bbox[2] - bbox[0],
-                              bbox[3] - bbox[1], fill=False,
-                              edgecolor='g', linewidth=3)
-                )
-            plt.title('{}  {:.3f}'.format(class_name, score))
-            plt.show()
+    return blobs_out, im_scales
 
 
 def apply_nms(all_boxes, thresh):
@@ -298,23 +271,43 @@ def im_detect(net, model, sample):
     return scores, boxes
 
 
-def to_json_format(detections, object_class):
+def to_json_format(detections, object_class=None):
     bboxes = []
     for det in detections:
         bbox = {'x': int(det[0]), 'y': int(det[1]),
-                'w': int(det[2]-det[0]), 'h': int(det[3]-det[1]),
-                'score': float(det[4]), 'class': object_class}
+                'w': int(det[2]-det[0]+1), 'h': int(det[3]-det[1]+1),
+                'score': float(det[4]),
+                'class': object_class if object_class is not None else int(det[5])}
         bboxes.append(bbox)
     return bboxes
 
 
-def test_image_collection(net, model, image_collection):
+def plot_bboxes(image, bboxes, color=(0,255,0), line_width=2, show_scores=False):
+    ret_image = image.copy()
+
+    for bbox in bboxes:
+        min_corner = (bbox['x'], bbox['y'])
+        max_corner = (bbox['x'] + bbox['w'], bbox['y'] + bbox['h'])
+
+        cv2.rectangle(ret_image, min_corner, max_corner, color, line_width)
+
+        if show_scores:
+            score = bbox['score']
+            font= cv2.FONT_HERSHEY_DUPLEX
+            font_size = min(max(bbox['w'], bbox['h']) / 64, 0.6)
+            font_width = 1
+            cv2.putText(ret_image, '{:.3f}, {}x{}'.format(score, bbox['h'], bbox['w']),
+                        (bbox['x'], bbox['y']), font, font_size, color, font_width)
+
+    return ret_image
+
+
+def test_image_collection(net, model, image_collection, output_dir):
     max_per_image = cfg.TEST.MAX_PER_IMAGE
     SCORE_THRESH = 0.05
 
     _t = {'im_detect' : Timer(), 'misc' : Timer()}
     all_detections = {}
-
     for indx, sample in enumerate(DirectIterator(image_collection)):
         image_basename = str(PurePath(sample.id).relative_to(image_collection.imgs_path))
 
@@ -324,34 +317,106 @@ def test_image_collection(net, model, image_collection):
 
         _t['misc'].tic()
 
-        json_detections = []
-        for j in range(1, scores.shape[1]):
-            inds = np.where(scores[:, j] > SCORE_THRESH)[0]
-            cls_scores = scores[inds, j]
-            cls_boxes = boxes[inds, j*4:(j+1)*4]
-            top_inds = np.argsort(-cls_scores)[:max_per_image]
-            cls_scores = cls_scores[top_inds]
-            cls_boxes = cls_boxes[top_inds, :]
+        scores_class = scores.argmax(axis=1)
+        cls_scores = scores.max(axis=1)
+        mask = (scores_class > 0) * (cls_scores > SCORE_THRESH)
+        inds = np.where(mask == True)[0]
 
+        if np.sum(mask):
+            # print(inds, scores_class)
+            cls_boxes = []
+            for bindx in inds:
+                # print(indx, scores_class[indx])
+                j = int(scores_class[bindx])
+                cls_boxes.append(boxes[bindx, j*4:(j+1)*4])
+            cls_boxes = np.array(cls_boxes)
             detections = \
-                    np.hstack((cls_boxes, cls_scores[:, np.newaxis])) \
+                np.hstack((cls_boxes, cls_scores[mask, np.newaxis], scores_class[mask].reshape((-1,1)))) \
                     .astype(np.float32, copy=False)
-
-            keep = nms(detections, cfg.TEST.FINAL_NMS)
+            keep = nms(detections[:, :5], cfg.TEST.FINAL_NMS)
             detections = detections[keep]
+            json_detections = to_json_format(detections)
+        else:
+            json_detections = []
 
-            json_detections += to_json_format(detections, j)
+        # json_detections = []
+        # for j in range(1, scores.shape[1]):
+        #     inds = np.where(scores[:, j] > SCORE_THRESH)[0]
+        #     cls_scores = scores[inds, j]
+        #     cls_boxes = boxes[inds, j*4:(j+1)*4]
+        #     top_inds = np.argsort(-cls_scores)[:max_per_image]
+        #     cls_scores = cls_scores[top_inds]
+        #     cls_boxes = cls_boxes[top_inds, :]
+        #
+        #     detections = \
+        #             np.hstack((cls_boxes, cls_scores[:, np.newaxis])) \
+        #             .astype(np.float32, copy=False)
+        #
+        #     keep = nms(detections, cfg.TEST.FINAL_NMS)
+        #     detections = detections[keep]
+        #
+        #     json_detections += to_json_format(detections, j)
 
         all_detections[image_basename] = json_detections
+
+        if cfg.TEST.VIZUALIZATION.ENABLE:
+            score_thresh = cfg.TEST.VIZUALIZATION.SCORE_THRESH
+
+            viz_output_path = os.path.join(output_dir, 'viz', image_basename)
+            viz_output_dir = os.path.dirname(viz_output_path)
+            if not os.path.exists(viz_output_dir):
+                os.makedirs(viz_output_dir)
+
+            draw_boxes = [box for box in json_detections if box['score'] >= score_thresh]
+            if not cfg.TEST.VIZUALIZATION.ONLY_WITH_OBJECTS or draw_boxes:
+                image = sample.bgr_data
+                if cfg.TEST.VIZUALIZATION.DRAW_BOXES:
+                    image = plot_bboxes(image, draw_boxes,
+                                        show_scores=cfg.TEST.VIZUALIZATION.DRAW_SCORES,line_width=1)
+                cv2.imwrite(viz_output_path, image)
 
         _t['misc'].toc()
 
         print('im_detect: {:d}/{:d} {:.3f}s {:.3f}s' \
               .format(indx + 1, len(image_collection),
                       _t['im_detect'].average_time, _t['misc'].average_time))
+        yield all_detections
 
-    return all_detections
 
+def extract_regions_image_collection(net, model, image_collection):
+    _t = {'im_forward' : Timer(), 'misc' : Timer()}
+    total_clusters_count = 0
+    result = {}
+
+    for indx, sample in enumerate(DirectIterator(image_collection)):
+        image_basename = str(PurePath(sample.id).relative_to(image_collection.imgs_path))
+
+        image_regions = {
+            'marking': sample.marking,
+            'scales': [],
+            'clusters': []
+        }
+
+        _t['im_forward'].tic()
+        for target_size in sample.scales:
+            blobs, im_scales = fixed_scale_forward(net, model, sample, target_size)
+            clusters, noise = model._dnets[0].extract_clusters(net)
+            clusters = [[(r.x, r.y, r.cx, r.cy, r.w, r.h, r.p) for r in cluster]
+                         for cluster in clusters]
+
+            image_regions['scales'].append(im_scales[0])
+            image_regions['clusters'].append(clusters)
+
+        _t['im_forward'].toc()
+        total_clusters_count += len(image_regions['clusters'])
+
+        print('im_forward: {:d}/{:d} total_clusters: {:d} time: {:.3f}s' \
+              .format(indx + 1, len(image_collection),
+                      total_clusters_count,
+                      _t['im_forward'].average_time))
+
+        result[image_basename] = image_regions
+        yield result
 
 def test_net(weights_path, output_dir, dataset_names=None):
     model = DetectorModel(cfg.MODEL)
@@ -384,10 +449,29 @@ def test_net(weights_path, output_dir, dataset_names=None):
         print("# %d/%d dataset %s: %d images" %
               (indx + 1, len(cfg.TEST.DATASETS), dataset.PATH, len(image_collection)))
 
-        detections = test_image_collection(net, model, image_collection)
-
         output_path = os.path.join(output_dir, dataset.OUTPUT_FILE)
-        with open(output_path, 'w') as f:
-            json.dump(detections, f, indent=2)
+        if not image_collection.extract_clusters:
+            extractor = test_image_collection(net, model, image_collection, output_dir)
+            total_result = None
+
+            for image_indx, result in enumerate(extractor):
+                total_result = result
+                if image_indx % 1000 == 0:
+                    with open(output_path, 'w') as f:
+                        json.dump(total_result, f, indent=2)
+
+            with open(output_path, 'w') as f:
+                json.dump(total_result, f, indent=2)
+        else:
+            extractor = extract_regions_image_collection(net, model, image_collection)
+            total_result = None
+            for image_indx, result in enumerate(extractor):
+                total_result = result
+                if image_indx % 500 == 0:
+                    with open(output_path, 'wb') as f:
+                        pickle.dump(result, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+            with open(output_path, 'wb') as f:
+                pickle.dump(total_result, f, protocol=pickle.HIGHEST_PROTOCOL)
 
         print('Output detections file: %s\n' % output_path)

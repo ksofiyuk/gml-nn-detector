@@ -5,10 +5,13 @@
 # Written by Konstantin Sofiyuk
 # --------------------------------------------------------
 from detector_nets.rpn import RPN
+from detector_nets.seg_net import SegNet
 
 
 def create_network(config):
     if config.TYPE == "RPN":
         return RPN(config)
+    elif config.TYPE == "SegNet":
+        return SegNet(config)
     else:
         raise NotImplementedError(config.TYPE)

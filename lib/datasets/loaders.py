@@ -92,6 +92,11 @@ def load_bboxes_dataset_with_json_marking(dataset_path: str,
                 obj['ignore'] = False
             if 'class' not in obj:
                 obj['class'] = 1
+            # else:
+            #     if obj['class'] == 'triangle':
+            #         obj['class'] = 1
+            #     else:
+            #         obj['class'] = 2
 
         image_sample = ImageFileSampleCV(image_path, image_marking,
                                          max_size, scales)
@@ -119,7 +124,7 @@ def load_images_from_directory_without_marking(
 
     images_dir = Path(images_path)
     images_files = []
-    for format in ['*.jpg', '*.jpeg', '*.png']:
+    for format in ['*.jpg', '*.jpeg', '*.png', '*.bmp']:
         if recurse:
             images_files += list(images_dir.rglob(format.lower()))
             images_files += list(images_dir.rglob(format.upper()))

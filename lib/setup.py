@@ -116,6 +116,12 @@ ext_modules = [
         include_dirs = [numpy_include]
     ),
     Extension(
+        "utils.cython_bbox_maps",
+        ["utils/bbox_maps.pyx"],
+        extra_compile_args={'gcc': ["-Wno-cpp", "-Wno-unused-function"]},
+        include_dirs=[numpy_include]
+    ),
+    Extension(
         "fast_nms.cpu_nms",
         ["fast_nms/cpu_nms.pyx"],
         extra_compile_args={'gcc': ["-Wno-cpp", "-Wno-unused-function"]},

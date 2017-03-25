@@ -45,6 +45,7 @@ class ImagesCollection(object):
         self._num_backgrounds = None
         self.imgs_path = None
         self._name = params.get('NAME', None)
+        self.extract_clusters = params.get('EXTRACT_CLUSTERS', False)
 
         if params['TYPE'] in ['BBOX_JSON_MARKING', 'GML_FACES_MARKING']:
             json_format = {'BBOX_JSON_MARKING': 'default',

@@ -151,6 +151,7 @@ __C.TRAIN.DATASET = 'default'
 # целевого размера, так что размер наименьшей стороны будет лежать
 # в отрезке [(1 - SCALE_JITTERING/100)*SCALE, (1 + SCALE_JITTERING/100)*SCALE]
 __C.TRAIN.SCALE_JITTERING = 0.0
+__C.TRAIN.RATIO_JITTERING = 0.0
 
 __C.TRAIN.DOUBLE_GENERATE = False
 __C.TRAIN.REDISTRIBUTE_CLASSES = False
@@ -204,6 +205,12 @@ __C.TEST.RPN_PRE_NMS_TOP_N = 6000
 __C.TEST.RPN_POST_NMS_TOP_N = 300
 # Proposal height and width both need to be greater than RPN_MIN_SIZE (at orig image scale)
 __C.TEST.RPN_MIN_SIZE = 16
+__C.TEST.VIZUALIZATION = edict()
+__C.TEST.VIZUALIZATION.ENABLE = False
+__C.TEST.VIZUALIZATION.SCORE_THRESH = 0.5
+__C.TEST.VIZUALIZATION.ONLY_WITH_OBJECTS = False
+__C.TEST.VIZUALIZATION.DRAW_SCORES = False
+__C.TEST.VIZUALIZATION.DRAW_BOXES = True
 
 #
 # MISC

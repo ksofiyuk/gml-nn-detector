@@ -84,6 +84,8 @@ class RPN(DetectorNet):
                                   pre_nms_topN=self._cfg.PRE_NMS_TOP_N,
                                   post_nms_topN=self._cfg.POST_NMS_TOP_N,
                                   nms_thresh=self._cfg.NMS_THRESH,
+                                  min_size=self._cfg.get('MIN_SIZE', 16),
+                                  clip_proposals=self._cfg.get('CLIP_PROPOSALS', True),
                                   num_classes=self._num_classes),
                     slots_list=[(p('cls_prob_reshape'), 0),
                                 (p('bbox_pred'), 0),
@@ -92,6 +94,7 @@ class RPN(DetectorNet):
 
         anchors_target_params = {'batchsize': self._cfg.BATCHSIZE,
                                  'square_targets': self._cfg.SQUARE_TARGETS,
+                                 'square_targets_ky': self._cfg.SQUARE_TARGETS_KY,
                                  'positive_overlap': self._cfg.POSITIVE_OVERLAP,
                                  'negative_overlap': self._cfg.NEGATIVE_OVERLAP,
                                  'tn_fraction': self._cfg.TOP_NEGATIVE_FRACTION,
@@ -105,12 +108,13 @@ class RPN(DetectorNet):
                                 (None, 'ignored_boxes'), (None, 'im_info'),
                                 (None, 'data'), (p('cls_prob_reshape'), 0)],
                      phase='train')
-        
-        m.add_layer(SoftmaxWithLossLayer(p('loss_cls')),
+
+        loss_weight = self._cfg.get('LOSS_WEIGHT', 1)
+        m.add_layer(SoftmaxWithLossLayer(p('loss_cls'), loss_weight=loss_weight),
                     slots_list=[(p('cls_score_reshape'), 0), (p('anchor_target'), 0)],
                     phase='train')
         
-        m.add_layer(SmoothL1LossPyLayer(p('loss_bbox')),
+        m.add_layer(SmoothL1LossPyLayer(p('loss_bbox'), loss_weight=loss_weight),
                     slots_list=[(p('bbox_pred'), 0), (p('anchor_target'), 1),
                                 (p('anchor_target'), 2), (p('anchor_target'), 3)],
                     phase='train')

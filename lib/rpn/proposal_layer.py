@@ -39,6 +39,7 @@ class ProposalLayer(caffe.Layer):
         self._post_nms_topN = layer_params['post_nms_topN']
         self._nms_thresh = layer_params['nms_thresh']
         self._num_classes = layer_params['num_classes']
+        self._clip_proposals = layer_params.get('clip_proposals', True)
 
         self._num_anchors = self._anchors.shape[0]
 
@@ -130,7 +131,8 @@ class ProposalLayer(caffe.Layer):
         proposals = bbox_transform_inv(anchors, bbox_deltas)
 
         # 2. clip predicted boxes to image
-        proposals = clip_boxes(proposals, im_info[:2])
+        if self._clip_proposals:
+            proposals = clip_boxes(proposals, im_info[:2])
 
         # 3. remove predicted boxes with either height or width < threshold
         # (NOTE: convert min_size to input image scale stored in im_info[2])
