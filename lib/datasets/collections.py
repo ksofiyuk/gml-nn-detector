@@ -36,7 +36,7 @@ class ImagesCollection(object):
         Returns:
 
         """
-        assert params['TYPE'] in ['BBOX_JSON_MARKING', 'IMAGES_DIR', 'GML_FACES_MARKING']
+        assert params['TYPE'] in ['BBOX_JSON_MARKING', 'IMAGES_DIR', 'GML_FACES_MARKING', 'GML_BBOXES_MARKING']
 
         self._params = params
         self._samples = None
@@ -47,9 +47,10 @@ class ImagesCollection(object):
         self._name = params.get('NAME', None)
         self.extract_clusters = params.get('EXTRACT_CLUSTERS', False)
 
-        if params['TYPE'] in ['BBOX_JSON_MARKING', 'GML_FACES_MARKING']:
+        if params['TYPE'] in ['BBOX_JSON_MARKING', 'GML_FACES_MARKING', 'GML_BBOXES_MARKING']:
             json_format = {'BBOX_JSON_MARKING': 'default',
-                           'GML_FACES_MARKING': 'gml_faces'}[params['TYPE']]
+                           'GML_FACES_MARKING': 'gml_faces',
+                           'GML_BBOXES_MARKING': 'gml_bboxes'}[params['TYPE']]
             self.imgs_path = osp.join(params['PATH'], 'imgs')
             if 'MARKING_NAME' in params:
                 self._samples = \

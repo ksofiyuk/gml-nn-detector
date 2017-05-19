@@ -15,7 +15,6 @@ from caffe_model.other_layers import ReshapeLayer
 from caffe_model.other_layers import SoftmaxLayer
 from caffe_model.other_layers import SoftmaxWithLossLayer
 from caffe_model.other_layers import SmoothL1LossPyLayer
-import numpy as np
 
 
 class RPN(DetectorNet):

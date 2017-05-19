@@ -13,11 +13,12 @@ RoIDataLayer implements a Caffe Python layer.
 
 import caffe
 import random
-from core.config import cfg
+from core.config import cfg, get_exp_dir
 import numpy as np
 import numpy.random as npr
 import yaml
 import cv2
+from pathlib import Path
 
 from utils.blob import prep_im_for_blob, im_list_to_blob
 from datasets.iterators import MultiRandomOrderIterator
@@ -25,6 +26,7 @@ from datasets.iterators import InfinityLoopIterator
 from datasets.image_sample import FlippedImageSample
 
 IMS_PER_BATCH = 1
+DEBUG_VIZ_INDX = 0
 
 class RoIDataLayer(caffe.Layer):
     """ data layer used for training."""
@@ -225,10 +227,12 @@ def get_minibatch(samples, num_classes):
 
     return blobs, samples
 
+
 def illumination_jittering(im_sample, value):
     illumination = np.random.uniform(-1, 1) * value * 128
     light_map = np.full(im_sample.shape, illumination)
     return cv2.add(im_sample, light_map, dtype=cv2.CV_8U)
+
 
 def contrast_jittering(im_sample, value):
     im_sample = im_sample.copy()
@@ -237,9 +241,11 @@ def contrast_jittering(im_sample, value):
         im_sample[:, :, ch] = cv2.multiply(im_sample[:, :, ch], contrast, dtype=cv2.CV_8U)
     return im_sample
 
+
 def gauss_noise_jittering(im_sample, value):
     noise_map = np.zeros(im_sample.shape)
-    cv2.randn(noise_map, 0, np.random.uniform(0, value))
+    std = np.array([np.random.uniform(0, value)] * 3)
+    cv2.randn(noise_map, 0, std)
     # noise_map = np.random.normal(0.0, np.random.uniform(0, value), im_sample.shape)
     return cv2.add(im_sample, noise_map, dtype=cv2.CV_8U)
 
@@ -258,14 +264,34 @@ def _convert_sample(sample, scale_indx):
 
     sample_image = sample.bgr_data.copy()
 
-    if random.random() < 0.2:
-        ksize = 2 * np.random.randint(1, 3) + 1
-        sample_image = cv2.GaussianBlur(sample_image, (ksize,ksize), 0)
+    if cfg.TRAIN.GAUSS_BLUR_JITTERING > 0:
+        if random.random() < cfg.TRAIN.GAUSS_BLUR_JITTERING:
+            ksize = 2 * np.random.randint(1, 3) + 1
+            sample_image = cv2.GaussianBlur(sample_image, (ksize, ksize), 0)
 
-    sample_image = illumination_jittering(sample_image, 0.3)
-    sample_image = contrast_jittering(sample_image, 0.3)
-    sample_image = gauss_noise_jittering(sample_image, 10)
+    if cfg.TRAIN.ILLUMINATION_JITTERING > 0:
+        value = cfg.TRAIN.ILLUMINATION_JITTERING # 0.3
+        sample_image = illumination_jittering(sample_image, value)
 
+    if cfg.TRAIN.CONTRAST_JITTERING > 0:
+        value = cfg.TRAIN.CONTRAST_JITTERING # 0.3
+        sample_image = contrast_jittering(sample_image, value)
+
+    if cfg.TRAIN.GAUSS_NOISE_JITTERING > 0 and random.random() < 0.5:
+        value = cfg.TRAIN.GAUSS_NOISE_JITTERING # 10
+        sample_image = gauss_noise_jittering(sample_image, value)
+
+    if cfg.TRAIN.DEBUG_VIZ:
+        global DEBUG_VIZ_INDX
+
+        debug_viz_dir = Path(get_exp_dir()) / 'debug_viz'
+        if not debug_viz_dir.exists():
+            debug_viz_dir.mkdir()
+
+        cv2.imwrite(str(debug_viz_dir / ('%02d.jpg' % DEBUG_VIZ_INDX)), sample_image)
+        DEBUG_VIZ_INDX += 1
+        if DEBUG_VIZ_INDX == 20:
+            DEBUG_VIZ_INDX = 0
 
     im, im_scale = prep_im_for_blob(sample_image, cfg.PIXEL_MEANS,
                                     target_size, sample.max_size, ar_mult)

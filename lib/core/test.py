@@ -13,12 +13,13 @@ from utils.timer import Timer
 import numpy as np
 import cv2
 import caffe
-from core.nms_wrapper import nms
+from core.nms_wrapper import nms, soft_nms
 from utils.blob import im_list_to_blob
 import os
 import json
 import pickle
 from pathlib import PurePath
+from tqdm import tqdm
 
 from datasets.collections import ImagesCollection
 from datasets.iterators import DirectIterator
@@ -208,6 +209,7 @@ def dense_scan_image(net, im, block_h, block_w, oratio):
 
 
 def im_detect(net, model, sample):
+    from datasets.image_sample import DummyImageSample
     max_target_size = max(sample.scales)
 
     im = sample.bgr_data
@@ -225,8 +227,8 @@ def im_detect(net, model, sample):
         else:
             block_h, block_w = max_target_size, max_size
 
-        shift_h = int(block_h * 0.90)
-        shift_w = int(block_w * 0.90)
+        shift_h = int(block_h * 1.0)
+        shift_w = int(block_w * 1.0)
 
         print(im.shape, shift_h, shift_w)
         cur_x, cur_y = 0, 0
@@ -241,7 +243,9 @@ def im_detect(net, model, sample):
 
                 print(start_y, end_y, start_x, end_x)
                 sub_im = im[start_y:end_y, start_x:end_x, :]
-                tscores, tboxes = fixed_scale_detect(net, model, sub_im, max_target_size)
+                sub_sample = DummyImageSample(sub_im, sample.id, sample.marking,
+                                              sample.max_size, sample.scales)
+                tscores, tboxes = fixed_scale_detect(net, model, sub_sample, max_target_size)
 
                 tboxes[:, 4] += start_x
                 tboxes[:, 6] += start_x
@@ -302,14 +306,18 @@ def plot_bboxes(image, bboxes, color=(0,255,0), line_width=2, show_scores=False)
     return ret_image
 
 
-def test_image_collection(net, model, image_collection, output_dir):
+def test_image_collection(net, model, image_collection, output_dir, prev_marking=None):
     max_per_image = cfg.TEST.MAX_PER_IMAGE
     SCORE_THRESH = 0.05
 
     _t = {'im_detect' : Timer(), 'misc' : Timer()}
-    all_detections = {}
+    all_detections = {} if prev_marking is None else prev_marking
+    pbar = tqdm(total=len(image_collection))
     for indx, sample in enumerate(DirectIterator(image_collection)):
         image_basename = str(PurePath(sample.id).relative_to(image_collection.imgs_path))
+        if image_basename in all_detections:
+            pbar.update(1)
+            continue
 
         _t['im_detect'].tic()
         scores, boxes = im_detect(net, model, sample)
@@ -317,45 +325,55 @@ def test_image_collection(net, model, image_collection, output_dir):
 
         _t['misc'].tic()
 
-        scores_class = scores.argmax(axis=1)
-        cls_scores = scores.max(axis=1)
-        mask = (scores_class > 0) * (cls_scores > SCORE_THRESH)
-        inds = np.where(mask == True)[0]
+        # scores_class = scores.argmax(axis=1)
+        # cls_scores = scores.max(axis=1)
+        # mask = (scores_class > 0) * (cls_scores > SCORE_THRESH)
+        # inds = np.where(mask == True)[0]
 
-        if np.sum(mask):
-            # print(inds, scores_class)
-            cls_boxes = []
-            for bindx in inds:
-                # print(indx, scores_class[indx])
-                j = int(scores_class[bindx])
-                cls_boxes.append(boxes[bindx, j*4:(j+1)*4])
-            cls_boxes = np.array(cls_boxes)
-            detections = \
-                np.hstack((cls_boxes, cls_scores[mask, np.newaxis], scores_class[mask].reshape((-1,1)))) \
-                    .astype(np.float32, copy=False)
-            keep = nms(detections[:, :5], cfg.TEST.FINAL_NMS)
-            detections = detections[keep]
-            json_detections = to_json_format(detections)
-        else:
-            json_detections = []
-
-        # json_detections = []
-        # for j in range(1, scores.shape[1]):
-        #     inds = np.where(scores[:, j] > SCORE_THRESH)[0]
-        #     cls_scores = scores[inds, j]
-        #     cls_boxes = boxes[inds, j*4:(j+1)*4]
-        #     top_inds = np.argsort(-cls_scores)[:max_per_image]
-        #     cls_scores = cls_scores[top_inds]
-        #     cls_boxes = cls_boxes[top_inds, :]
-        #
+        # if np.sum(mask):
+        #     # print(inds, scores_class)
+        #     cls_boxes = []
+        #     for bindx in inds:
+        #         # print(indx, scores_class[indx])
+        #         j = int(scores_class[bindx])
+        #         cls_boxes.append(boxes[bindx, j*4:(j+1)*4])
+        #     cls_boxes = np.array(cls_boxes)
         #     detections = \
-        #             np.hstack((cls_boxes, cls_scores[:, np.newaxis])) \
+        #         np.hstack((cls_boxes, cls_scores[mask, np.newaxis], scores_class[mask].reshape((-1,1)))) \
         #             .astype(np.float32, copy=False)
-        #
-        #     keep = nms(detections, cfg.TEST.FINAL_NMS)
+        #     keep = nms(detections[:, :5], cfg.TEST.FINAL_NMS)
         #     detections = detections[keep]
-        #
-        #     json_detections += to_json_format(detections, j)
+        #     json_detections = to_json_format(detections)
+        # else:
+        #     json_detections = []
+
+        json_detections = []
+        for j in range(1, scores.shape[1]):
+            inds = np.where(scores[:, j] > SCORE_THRESH)[0]
+            cls_scores = scores[inds, j]
+            cls_boxes = boxes[inds, j*4:(j+1)*4]
+            top_inds = np.argsort(-cls_scores)[:max_per_image]
+            cls_scores = cls_scores[top_inds]
+            cls_boxes = cls_boxes[top_inds, :]
+
+            detections = \
+                    np.hstack((cls_boxes, cls_scores[:, np.newaxis])) \
+                    .astype(np.float32, copy=False)
+
+            if cfg.TEST.FINAL_NMS_ALG == 'NMS':
+                keep = nms(detections, cfg.TEST.FINAL_NMS)
+            elif cfg.TEST.FINAL_NMS_ALG == 'SOFT_NMS_L':
+                keep = soft_nms(detections, sigma=0.5, Nt=cfg.TEST.FINAL_NMS, method=1)
+            elif cfg.TEST.FINAL_NMS_ALG == 'SOFT_NMS_G':
+                keep = soft_nms(detections, sigma=0.5, Nt=cfg.TEST.FINAL_NMS, method=2)
+            elif cfg.TEST.FINAL_NMS_ALG == 'NONE':
+                keep = list(range(len(detections)))
+            else:
+                raise ValueError('Unknown NMS algorithm: %s' % cfg.TEST.FINAL_NMS_ALG)
+
+            detections = detections[keep]
+
+            json_detections += to_json_format(detections, j)
 
         all_detections[image_basename] = json_detections
 
@@ -372,15 +390,14 @@ def test_image_collection(net, model, image_collection, output_dir):
                 image = sample.bgr_data
                 if cfg.TEST.VIZUALIZATION.DRAW_BOXES:
                     image = plot_bboxes(image, draw_boxes,
-                                        show_scores=cfg.TEST.VIZUALIZATION.DRAW_SCORES,line_width=1)
+                                        show_scores=cfg.TEST.VIZUALIZATION.DRAW_SCORES,line_width=3)
                 cv2.imwrite(viz_output_path, image)
 
         _t['misc'].toc()
 
-        print('im_detect: {:d}/{:d} {:.3f}s {:.3f}s' \
-              .format(indx + 1, len(image_collection),
-                      _t['im_detect'].average_time, _t['misc'].average_time))
+        pbar.update(1)
         yield all_detections
+    pbar.close()
 
 
 def extract_regions_image_collection(net, model, image_collection):
@@ -388,6 +405,7 @@ def extract_regions_image_collection(net, model, image_collection):
     total_clusters_count = 0
     result = {}
 
+    pbar = tqdm(total=len(image_collection))
     for indx, sample in enumerate(DirectIterator(image_collection)):
         image_basename = str(PurePath(sample.id).relative_to(image_collection.imgs_path))
 
@@ -410,13 +428,11 @@ def extract_regions_image_collection(net, model, image_collection):
         _t['im_forward'].toc()
         total_clusters_count += len(image_regions['clusters'])
 
-        print('im_forward: {:d}/{:d} total_clusters: {:d} time: {:.3f}s' \
-              .format(indx + 1, len(image_collection),
-                      total_clusters_count,
-                      _t['im_forward'].average_time))
-
+        pbar.update(1)
         result[image_basename] = image_regions
         yield result
+    pbar.close()
+
 
 def test_net(weights_path, output_dir, dataset_names=None):
     model = DetectorModel(cfg.MODEL)

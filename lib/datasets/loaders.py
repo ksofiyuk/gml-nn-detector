@@ -72,7 +72,7 @@ def load_bboxes_dataset_with_json_marking(dataset_path: str,
     Returns:
         list: Список объектов типа ImageFileSampleCV
     """
-    if json_format not in {"default", "gml_faces"}:
+    if json_format not in {"default", "gml_faces", "gml_bboxes"}:
         raise NotImplementedError(json_format)
 
     marking_path = os.path.join(dataset_path, marking_filename)
@@ -86,6 +86,8 @@ def load_bboxes_dataset_with_json_marking(dataset_path: str,
 
         if json_format == 'gml_faces':
             image_marking = image_marking['faces']
+        elif json_format == 'gml_bboxes':
+            image_marking = image_marking['bboxes']
 
         for obj in image_marking:
             if 'ignore' not in obj:

@@ -151,7 +151,35 @@ __C.TRAIN.DATASET = 'default'
 # целевого размера, так что размер наименьшей стороны будет лежать
 # в отрезке [(1 - SCALE_JITTERING/100)*SCALE, (1 + SCALE_JITTERING/100)*SCALE]
 __C.TRAIN.SCALE_JITTERING = 0.0
+
+# Случайное изменение соотношения сторон по правилу:
+# new_ratio = old_ratio + [1 - RATIO_JITTERING/100.0, 1 + RATIO_JITTERING/100.0]
 __C.TRAIN.RATIO_JITTERING = 0.0
+
+# Случайное размытие по гауссу с ядром от 3 до 7 пикселей.
+# Значение (от 0 до 1) переменной определяет вероятность
+# применения этого размытия к изображению.
+__C.TRAIN.GAUSS_BLUR_JITTERING = 0.0
+
+# Сдвиг яркости всех каналов на некоторую константу, которая задается правилом:
+# shift_value = 128.0 * ILLUMINATION_JITTERING * np.random.uniform(-1, 1)
+__C.TRAIN.ILLUMINATION_JITTERING = 0.0
+
+# Умножение каждого канала изображения на некотрую константу:
+# 1 + np.random.uniform(-1, 1) * CONTRAST_JITTERING
+# При этом для каждого из каналов будет сгенерирована своя константа.
+__C.TRAIN.CONTRAST_JITTERING = 0.0
+
+# Добавление гауссового шума к изображению.
+# Значение этой переменной задает стандартное отклонение добавленного шума.
+# При этом шум добавляется с вероятностью 0.5, т. е. к половине изображений
+# шум добавлен не будет.
+# Значения могут быть от 0 до 255.
+__C.TRAIN.GAUSS_NOISE_JITTERING = 0.0
+
+# Сохранение последних 20 картинок, которые были поданы
+# на вход для обучения в папку debug_viz для отладки размножения данных
+__C.TRAIN.DEBUG_VIZ = False
 
 __C.TRAIN.DOUBLE_GENERATE = False
 __C.TRAIN.REDISTRIBUTE_CLASSES = False
@@ -179,6 +207,13 @@ __C.TEST.MAX_PER_IMAGE = 100
 # Overlap threshold used for non-maximum suppression (suppress boxes with
 # IoU >= this threshold)
 __C.TEST.NMS = 0.3
+
+# Тип алгоритма для подавления немаксимумов. Возможны следующие варианты:
+# 1) 'NMS' - классический алгоритм подавления немаксимумов
+# 2) 'SOFT_NMS_L' - алгоритм Soft NMS c sigma=0.5 с линейным ядром
+# 3) 'SOFT_NMS_G' - алгоритм Soft NMS с sigma=0.5 с гауссовым ядром
+# 4) 'NONE' - без NMS
+__C.TEST.FINAL_NMS_ALG = 'NMS'
 __C.TEST.FINAL_NMS = 0.5
 
 # Experimental: treat the (K+1) units in the cls_score layer as linear
@@ -273,6 +308,9 @@ def get_output_dir(suffix, net):
         return path
     else:
         return osp.join(path, net.name)
+
+def get_exp_dir():
+    return osp.abspath(osp.join(__C.ROOT_DIR, 'exps', __C.EXP_DIR))
 
 def _merge_a_into_b(a, b):
     """Merge config dictionary a into config dictionary b, clobbering the

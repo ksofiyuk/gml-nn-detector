@@ -8,6 +8,7 @@
 from abc import abstractmethod
 from abc import ABCMeta
 from copy import deepcopy
+import numpy as np
 import cv2
 
 
@@ -43,6 +44,35 @@ class ImageSample(metaclass=ABCMeta):
         return hash(self.id)
 
 
+class DummyImageSample(ImageSample):
+    def __init__(self, bgr_data, image_path, marking, max_size, scales):
+        self._image_path = image_path
+        self._marking = marking
+        self._max_size = max_size
+        self._scales = scales
+        self._bgr_data = bgr_data
+
+    @property
+    def marking(self):
+        return self._marking
+
+    @property
+    def id(self):
+        return self._image_path
+
+    @property
+    def max_size(self):
+        return self._max_size
+
+    @property
+    def scales(self):
+        return self._scales
+
+    @property
+    def bgr_data(self):
+        return self._bgr_data
+
+
 class ImageFileSampleCV(ImageSample):
     """Изображение изначально не хранится в оперативной памяти,
        при необходимости каждый раз загружается с жёсткого диска
@@ -68,6 +98,9 @@ class ImageFileSampleCV(ImageSample):
             data = ImageFileSampleCV._prev_bgr_data
         else:
             data = cv2.imread(self._image_path)
+            if data is None:
+                print('failed to load image:', self._image_path)
+                data = np.zeros((200, 200, 3), dtype=np.uint8)
             ImageFileSampleCV._prev_bgr_data = data
             ImageFileSampleCV._prev_id = self.id
 
